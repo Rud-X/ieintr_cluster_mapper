@@ -1,0 +1,227 @@
+Chemical;Abbreviation;CAS Number;Molecular weight;Carbon Atoms
+1,1,1,2-Tetrachloroethane;TECE;630-20-6;167.85;2
+1,1,1,2-Tetrafluoroethane;TEFE;811-97-2;102.03;2
+1,1,2-Trichloroethane;TCE;79-00-5;133.4;2
+1,2,3-Trichloropropane;TCP;96-18-4;147.43;3
+1,2,4-Trimethylbenzene;TMB;95-63-6;120.19;9
+1,2-Butadiene;BDI-12;590-19-2;54.09;4
+1,3,5-Triethylbenzene;TEB;102-25-0;162.27;12
+1,3-Butadiene;BDI-13;106-99-0;54.09;4
+1,3-Benzenedicarbonitrile;DCB-13;626-17-5;128.13;8
+1,4-Diethylbenzene;DEB;105-05-5;134.22;10
+1,4-Dioxane;DIOX;123-91-1;88.11;4
+1-Butene;C4E;106-98-9;56.11;4
+1-Pentene;C5E;109-67-1;70.13;5
+1-Phenylethanol (methyl benzyl alcohol);MBA;98-85-1;122.16;8
+1-Propanol;PROH;71-23-8;60.1;3
+2,3,7, 8-Tetrachlorodibenzodioxin;TCDD;1746-01-6;321.97;12
+2,3-Dichloropropene;DCP;78-88-6;110.97;3
+2-Methylhexane;MEHX;591-76-4;100.2;7
+2-methylphenol;MPH;95-48-7;108.14;7
+2-Methylthiophene;MTP;554-14-3;98.17;5
+2-Phenyl ethanol;PHETOH;60-12-8;122.16;8
+3,3-Dimethylpentane;DMP;562-49-2;100.2;7
+3-Methylheptane;MEHP;589-81-1;114.23;8
+4,4′-Methylene dianiline;MDA;101-77-9;198.26;13
+4,4′-Methylene dianiline (Polymer);PMDA;;;13
+4,4′-Methylene dianiline (Segment);SMDA;;;13
+4,4-Methylene diphenyl diisocyanate;MDI;101-68-8;250.25;15
+4,4-Methylene diphenyl diisocyanate (Polymer);PMDI;9016-87-9;;15
+4,4-Methylene diphenyl diisocyanate (Segment);SMDI;;;15
+4-Carboxybenzaldehyde;CBA;619-66-9;150.13;8
+4-Carboxybenzaldehyde (solid);CBA-S;619-66-9;150.13;8
+4-Formylmorpholine;NFM;4394-85-8;115.13;5
+Acetaldehyde;MECHO;75-07-0;44.05;2
+Acetic acid;HOAC;64-19-7;60.05;2
+Acetone;ACE;67-64-1;58.08;3
+Acetophenone;ACP;98-86-2;120.15;8
+Acetylene;ACET;74-86-2;26.04;2
+alpha-Linolenic acid;ALA;463-40-1;278.43;18
+Aluminium oxide;AL2O3;;;0
+Ammonia;NH3;7664-41-7;17.03;0
+Ammonium;NH4+;14798-03-9;18;0
+Ammonium carbamate;AMBIC;1111-78-0;78.07;3
+Ammonium sulfate;AMS;7783-20-2;132.14;0
+Aniline;PHNH2;62-53-3;93.13;6
+Argon;AR;7440-37-1;39.95;0
+Benzaldehyde;BZA;100-52-7;106.12;7
+Benzene;BZ;71-43-2;78.11;6
+Benzoic acid;BZAC;65-85-0;122.12;7
+Bibenzyl;BIBZ;103-29-7;182.26;14
+Bicarbonate;HCO3-;71-52-3;84.01;1
+Bis(2-Hydroxyethyl) terephthalate;BHET;959-26-2;254.24;12
+Butyl acetate;BUAC;123-86-4;116.16;6
+Calcium oxide;CAO;;;0
+Carbon black;CABB;1333-86-4;;1
+Carbon dioxide ;CO2;124-38-9;44.01;1
+Carbon monoxide;CO;630-08-0;28.1;1
+Carbonate;CO3--;3812-32-6;60.01;1
+Catalytic cracked oil;CCOIL;;;50
+Char;CHAR;;;1
+Chloride ion;CL-;16887-00-6;35.45;0
+Chlorine;CL2;7782-50-5;70.91;0
+Chlorobenzene;CLBZ;108-90-7;112.56;6
+Chloroform;CHCL3;67-66-3;119.38;1
+cis-2-Butene;CIS-2C4E;590-18-1;56.11;4
+Cobalt(II) bromide;COBR2;7789-43-7;218.74;0
+Cumene;CUMENE;98-82-8;120.19;9
+Cyclohexane;CYHEX;110-82-7;84.16;6
+Cyclopentadiene;CYPD;542-92-7;66.1;5
+Dicyclopentadiene;DCYPD;77-73-6;132.2;10
+Di-ethanolamine;DEA;141-43-5;61.08;2
+Diethylene glycol;DEG;111-46-6;106.12;4
+Difluoromethane;DFM;75-10-5;52.02;1
+Diisopropyl ether;DIPE;108-20-3;102.17;6
+Dimethyl disulfide;DMDS;624-92-0;94.2;2
+Dimethyl ether;DME;115-10-6;46.07;2
+Diphosphorus pentaoxide;P2O5;;;0
+Dipropylene glycol methyl ether ;DPGME;;;7
+Epichlorohydrin;ECH;106-89-8;95.52;3
+Ethane;N-C2A;74-84-0;30.07;2
+Ethanol;ETOH;64-17-5;46.07;2
+Ethyl chloride;EC;75-00-3;64.51;2
+Ethylbenzene;EB;100-41-4;106.17;8
+Ethylbenzene hydroperoxide;EBHP;3071-32-7;138.16;8
+Ethylene ;C2E;74-85-1;28.05;2
+Ethylene dichloride;EDC;107-06-2;98.96;2
+Ethylene glycol;MEG;107-21-1;62.07;2
+Ethylene oxide;EO;75-21-8;44.05;2
+Ferric chloride;FECL3;7705-08-0;162.2;0
+Fluoromethane;CH3F;593-53-3;34.03;1
+Formaldehyde;HCHO;50-00-0;30.03;1
+Formic acid;CHOOH;64-18-6;46.03;1
+Glycerol;GLY;56-81-5;92.09;3
+Hematite;FE2O3;;;0
+Hydrogen;H2;1333-74-0;2.02;0
+Hydrogen chloride;HCL;7647-01-0;36.49;0
+Hydrogen ion;H+;12408-02-5;;0
+Hydrogen sulfate;HSO4-;14996-02-2;;0
+Hydrogen sulfide;H2S;7783-06-4;34.08;0
+Hydronium;H3O+;13968-08-6;;0
+Hydroxide;OH-;14280-30-9;;0
+Isobutane;I-C4A;75-28-5;58.12;4
+Isobutylene;I-C4E;115-11-7;56.11;4
+Isopentane;I-C5A;78-78-4;72.15;5
+Isophthalonitrile;IPN;626-17-5;128.13;8
+Isoprene;IPE;78-79-5;68.12;5
+Isopropyl alcohol;IPA;67-63-0;60.1;3
+Lauroyl peroxide;LPO;105-74-8;398.62;24
+Linolenic Acid;ALA;463-40-1;278.43;18
+Magnesium oxide;MGO;;;0
+Manganese(II) bromide;MNBR2;13446-03-2;214.746;0
+Methane;CH4;74-82-8;16.04;1
+Methanol;MEOH;67-56-1;32.04;1
+Methyl acetate;MEOAC;79-20-9;74.08;3
+Methyl acetylene;MEAC;74-99-7;40.06;3
+Methyl chloride;MECL;74-87-3;50.49;1
+Methyl diethanolamine;MDEA;105-59-9;119.16;5
+Methyl fluoride;FMT;;;1
+Methyl formate;MF;107-31-3;60.05;2
+Methyl linoleate;MELO;112-63-0;294.47;19
+Methyl linolenate;LAME;301-00-8;292.46;19
+Methyl oleate;MOL;112-62-9;296.49;19
+Methyl tert-butyl ether;MTBE;1634-04-4;88.15;5
+Methylcyclopentane;MCP;96-37-7;84.16;6
+Molybdenum;MO;7439-98-7;;0
+Mono-ethanolamine;MEA;141-43-5;61.08;2
+m-Tolunitrile;M-TN;620-22-4;117.15;8
+m-Xylene;M-XYLENE;108-38-3;106.17;8
+m-Xylenediamine;MXDA;1477-55-0;136.19;8
+N,N-Dimethylformamide;DMF;68-12-2;73.09;3
+Naphtha;NAPHTHA;8030-30-6;;
+Naphthalene;NAPH;91-20-3;128.17;10
+n-Butane;N-C4A;106-97-8;58.12;4
+n-Hexane;HX;110-54-3;86.178;6
+n-Hexane;N-C6A;110-54-3;86.178;6
+Nitrate;NO3 ;14797-55-8;;0
+Nitric acid;HNO3;7697-37-2;63.01;0
+Nitric oxide;NO;10102-43-9;;0
+Nitrobenzene;NBZ;98-95-3;123.11;6
+Nitrogen;N2;7727-37-9;28.01;0
+Nitrogen dioxide;NO2;10102-44-0;;0
+Nitrogen tetroxide;N2O4;10544-72-6;92.01;0
+Nitrous oxide;N2O;10024-97-2;44.01;0
+N-methyl-2-Pyrrolidone;NMP;872-50-4;99.13;5
+n-Octane;N-C8A;111-65-9;114.23;8
+n-Pentane;N-C5A;109-66-0;72.15;5
+n-propylmercaptan;N-PMC;107-03-9;76.16;3
+n-Tricosane;N-C23A;638-67-5;324.7272;23
+Oxygen;O2;7782-44-7;32;0
+o-Xylene;O-XYLENE;95-47-6;106.17;8
+Oxymethylene segment;SOMEN;463-57-0;30.03;1
+Phosgene;COCL2;75-44-5;98.92;1
+Piperazine;PZ;110-85-0;86.14;4
+poly(vinyl chloride);PVC;9002-86-2;;2
+poly(vinyl chloride) (Solid);PVC-S;;;2
+Polyethylene glycol;PEG;25322-68-3;;2
+Polyethylene terephthalate;PET;25038-59-9;;10
+Polyethylene terephthalate (solid);PET-S;25038-59-9;;10
+Polyformaldehyde;POM;9002-81-7;;1
+Polypropylene;PP;9003-07-0;;3
+Potassium acetate;KAC;127-08-2;98.14;2
+Potassium bicarbonate;KHCO3;298-14-6;;1
+Potassium bicarbonate (solid);KHCO3-S;298-14-6;;1
+Potassium carbonate;K2CO3;584-08-7;;1
+Potassium carbonate (solid);K2CO3-S;584-08-7;;1
+Potassium ion;K+;24203-36-9;;0
+Potassium-chloride;KCL;7447-40-7;74.5513;0
+Potassium-hydroxide;KOH;1310-58-3;56.1056;0
+Potassium-oxide;K2O;;;0
+Propane;N-C3A;74-98-6;44.1;3
+Propyl acetate;NPAC;109-60-4;102.13;5
+Propylene;C3E;115-07-1;42.08;3
+Propylene glycol;PG;57-55-6;78.09;3
+Propylene glycol methyl ether;PGME;;;4
+Propylene glycol methyl ether isomer;I-PGME;;;4
+Propylene oxide;PO;75-56-9;58.08;3
+p-Toluic acid;P-TA;99-94-5;136.15;8
+p-Xylene;P-XYLENE;106-42-3;107.17;8
+Pyridine;PY;110-86-1;79.1;5
+Silicon-dioxide;SAND;7631-86-9;60.08;0
+Sodium ion;NA+;;;0
+Sodium borohydride;SBH;;;0
+Sodium chloride;NACL;7647-14-5;;0
+Sodium chloride (Solid);NACL-S;;;0
+Sodium formate;HCOONA;141-53-7;;1
+Sodium formate (solid);HCOONA-S;141-53-7;;1
+Sodium hydroxide ;NAOH;1310-73-2;;0
+Sodium hydroxide (hydrate);NAOH-W;;;0
+Sodium hydroxide (Solid);NAOH-S;;;0
+Sodium hypochlorite;NACLO;7681-52-9;;0
+Sodium methoxide;CH3ONA;124-41-4;;1
+Sodium oxide;NA2O;;;0
+Sodium sulfate;NA2SO4;7757-82-6;;0
+Sodium sulfide;NA2S;1313-82-2;;0
+Sodium sulfide (solid);NA2S-S;1313-82-2;;0
+Styrene ;STYRENE;100-42-5;104.15;8
+Sulfate ;SO4;14808-79-8;;0
+Sulfolane;SL;126-33-0;120.17;4
+Sulfur;S;7704-34-9;32.066;0
+Sulfur dioxide;O2S;7446-09-5;64.066;0
+Sulfuric acid;H2SO4;7664-93-9;98.08;0
+Terephthalate (segment);STPA;;;
+Terephthalic acid;TPA;100-21-0;166.13;8
+Terephthalic acid (solid);TPA-S;100-21-0;166.13;8
+tert-Butyl alcohol;T-BUOH;75-65-0;74.12;4
+tert-Butyl hydroperoxide;TBHP;75-91-2;90.12;4
+Tetrachloromethane;TECM;56-23-5;153.82;1
+Tetraethylene glycol;TEEG;112-60-7;194.23;8
+Thiophene;THIO;110-02-1;84.14;4
+Titanium dioxide;TIO2;;;0
+Titanium tetrachloride;TICL4;7550-45-0;;0
+Toluene;TOL;108-88-3;92.14;7
+trans-2-butene;T-2C4E;624-64-6;56.11;4
+Trichloroacetaldehyde;TCAL;75-87-6;147.39;2
+Triethylaluminium;TEA;97-93-8;;6
+Triethylene glycol;TEG;112-27-6;150.17;6
+Trilinolein;LLL;537-40-6;879.38;57
+Trilinolenin;LNLNLN;14465-68-0;873.34;57
+Triolein;OOO;122-32-7;885.43;57
+Tripropylene glycol methyl ether ;TPGME;;;10
+Urea;UREA;57-13-6;60.06;1
+Urea (solid);UREA-S;57-13-6;;1
+Vinyl acetylene;VAC;689-97-4;52.07;4
+Vinyl chloride (monomer);VCM;75-01-4;62.5;2
+Vinyl chloride (segment);SVCM;;62.5;2
+Water;H2O;7732-18-5;;0
+Water;H2O-1;7732-18-5;;0
