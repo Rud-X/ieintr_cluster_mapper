@@ -60,19 +60,78 @@ The original Excel extraction approach (one sheet per company, cell ranges in `c
 
 ## Data Model
 
-Six tables in total. The diagram below shows how they relate:
+Five tables in total. The diagram below shows how they relate:
 
-```
-components
-    │
-    └──< stream_composition >──── streams ────── companies
-                                      │
-                                   (direction:
-                                  input / output)
-                                      │
-                                   flows
-                                (populated after
-                                 matching analysis)
+```mermaid
+erDiagram
+    companies {
+        TEXT company_id PK
+        TEXT name
+        TEXT sector
+        TEXT location
+        REAL scaling_factor
+        INTEGER included
+        TEXT normalize_stream_id FK
+    }
+
+    streams {
+        TEXT stream_id PK
+        TEXT company_id FK
+        TEXT stream_name
+        TEXT stream_type
+        TEXT direction
+        REAL flow_kton_per_year
+        REAL norm_flow_kton_per_year
+        REAL temperature_c
+        REAL pressure_bar
+        TEXT composition_raw
+        REAL carbon_pct
+        INTEGER carbon_pct_complete
+        TEXT notes
+    }
+
+    components {
+        TEXT component_id PK
+        TEXT name
+        TEXT aliases
+        TEXT category
+        TEXT cas_number
+        REAL molecular_weight
+        INTEGER carbon_atoms
+        REAL carbon_weight_pct
+        INTEGER carbon_weight_pct_manual
+        INTEGER hazardous
+        INTEGER needs_review
+        TEXT notes
+    }
+
+    stream_composition {
+        TEXT composition_id PK
+        TEXT stream_id FK
+        TEXT component_id FK
+        REAL fraction
+        INTEGER is_trace
+        REAL carbon_fraction
+    }
+
+    flows {
+        TEXT flow_id PK
+        TEXT from_company_id FK
+        TEXT to_company_id FK
+        TEXT from_stream_id FK
+        TEXT to_stream_id FK
+        REAL flow_kton_per_year
+        TEXT status
+        TEXT notes
+    }
+
+    companies ||--o{ streams : "has"
+    streams ||--o{ stream_composition : "contains"
+    components ||--o{ stream_composition : "identified in"
+    companies ||--o{ flows : "supplies (from)"
+    companies ||--o{ flows : "receives (to)"
+    streams ||--o{ flows : "output stream"
+    streams ||--o{ flows : "input stream"
 ```
 
 ---
@@ -84,8 +143,13 @@ components
 | `name` | TEXT | Company name (matches `company` column in CSV) |
 | `sector` | TEXT | Industry sector |
 | `location` | TEXT | Zone or address |
+| `scaling_factor` | REAL | Flow display multiplier (range 0.1–5.0, default 1.0). Applied client-side to kton/year display only — raw DB values are never modified. |
+| `included` | INTEGER | Whether the company participates in cluster analysis: `1` = included, `0` = excluded. Excluded companies are hidden in the graph and omitted from candidate display, but their rows and stream data remain in the DB. |
+| `normalize_stream_id` | TEXT (FK → streams) | Reference stream for per-company normalization. Must be an `output`-direction stream belonging to this company. `NULL` = normalization disabled. Set and cleared via `normalize_streams.py`. |
 
-> During extraction, companies are auto-generated from distinct values in `raw_streams_data.csv`. The `sector` and `location` fields are left NULL and filled manually afterward.
+> During extraction, companies are auto-generated from distinct values in `raw_streams_data.csv`. The `sector` and `location` fields are left NULL and filled manually afterward. `scaling_factor` and `included` were added via `migrate_add_company_columns.py`. `normalize_stream_id` was added via `migrate_add_normalization.py`.
+
+> **Important:** The backend computes candidates across **all** companies regardless of `included`. Filtering by `included` is done client-side so that toggling a company on does not require a full data re-fetch.
 
 ---
 
@@ -101,6 +165,8 @@ Centralizes component identity to avoid duplicate or inconsistent naming (e.g. `
 | `cas_number` | TEXT | CAS registry number where applicable |
 | `molecular_weight` | REAL | g/mol where applicable (NULL for named materials) |
 | `carbon_atoms` | INTEGER | Number of carbon atoms (from nomenclature CSV; NULL if unknown) |
+| `carbon_weight_pct` | REAL | Weight fraction of carbon in the component (0–1 scale). Computed as `(carbon_atoms × 12.011) / molecular_weight` by `carbon.py recalculate`. Can be overridden manually via `carbon.py set-component --carbon-pct`. `NULL` when data is insufficient and no manual override is set. |
+| `carbon_weight_pct_manual` | INTEGER | `1` if `carbon_weight_pct` was manually set via CLI; `0` or `NULL` otherwise. When `1`, `carbon.py recalculate` preserves the existing value. |
 | `hazardous` | INTEGER | Boolean flag: `1` = hazardous, `0` = not, NULL = unknown |
 | `needs_review` | INTEGER | `1` if auto-added during extraction and not yet verified, `0` otherwise |
 | `notes` | TEXT | Optional regulatory or handling notes |
@@ -124,9 +190,12 @@ Each stream belongs to exactly one company. `direction` is derived from `stream_
 | `stream_type` | TEXT | `raw_material`, `product`, or `waste` |
 | `direction` | TEXT | Derived: `input` (raw_material) or `output` (product, waste) |
 | `flow_kton_per_year` | REAL | Flow rate in kton/year |
+| `norm_flow_kton_per_year` | REAL | Normalized flow value: `flow_kton_per_year / ref_flow`, where `ref_flow` is the `flow_kton_per_year` of the company's `normalize_stream_id`. The reference stream's own value is always `1.0`. `NULL` when the owning company has no reference stream set. Recalculated by `normalize_streams.py`. |
 | `temperature_c` | REAL | Operating temperature in °C (NULL if not provided) |
 | `pressure_bar` | REAL | Operating pressure in bar (NULL if not provided) |
 | `composition_raw` | TEXT | Original composition string, preserved for reference |
+| `carbon_pct` | REAL | Total carbon weight % for the stream = sum of `carbon_fraction` across all non-trace, non-unknown composition rows. Partial sums are accepted (gaps visible via `carbon.py status`). `NULL` when no non-trace components have `carbon_weight_pct`. Calculated by `carbon.py recalculate`. |
+| `carbon_pct_complete` | INTEGER | `1` if all non-trace, non-unknown composition rows have `carbon_weight_pct` on their component; `0` if any are missing; `NULL` if the stream has no composition rows. Calculated by `carbon.py recalculate`. |
 | `notes` | TEXT | Optional |
 
 > `direction` is derived automatically from `stream_type`:
@@ -145,6 +214,7 @@ Each row is one component within one stream's composition. Fractions are stored 
 | `component_id` | TEXT (FK → components) | The resolved component |
 | `fraction` | REAL | Decimal fraction, e.g. `0.60` for 60%. `0` for trace amounts. |
 | `is_trace` | INTEGER | `1` if the original value was `"trace"`, `0` otherwise |
+| `carbon_fraction` | REAL | Carbon contribution of this component to the stream = `fraction × carbon_weight_pct`. `NULL` when the component's `carbon_weight_pct` is `NULL`, or when `is_trace = 1`. Calculated by `carbon.py recalculate`. |
 
 > **Parsing note:** The extraction script parses the raw composition string, resolves each component name against the `components` table (using `name` and `aliases`), and inserts a row here per component. If fractions don't sum to 1.0 (±0.02 tolerance), a warning is logged and the remainder is recorded as a `component_id` pointing to a reserved `"unknown"` entry in `components`.
 >
@@ -338,23 +408,150 @@ Handles these formats (observed in real data):
 
 ```
 project/
-├── industrial_cluster_spec_V2.md   ← this file
+├── industrial_cluster_spec_V2.md        ← this file
+├── claude_code_handoff.md               ← implementation brief for the web app
 ├── data/
-│   ├── raw_streams_data.csv         ← manually copied stream data (primary input)
-│   └── raw_materials_nomenclature.csv  ← reference materials list
-├── extract.py                       ← CSV → SQLite pipeline (implemented)
-├── industrial_cluster.db            ← output database (generated)
-├── data_exploration.ipynb           ← loads all tables into pandas, displays each
-├── component_review_analysis.md     ← pre-change analysis of needs_review=1 components
-├── exports/                         ← optional CSV exports of final tables
+│   ├── raw_streams_data.csv             ← manually copied stream data (primary input)
+│   └── raw_materials_nomenclature.csv   ← reference materials list
+├── extract.py                           ← CSV → SQLite pipeline (stable, do not modify)
+├── migrate_add_company_columns.py       ← adds scaling_factor + included to companies
+├── migrate_add_normalization.py         ← adds normalize_stream_id to companies, norm_flow_kton_per_year to streams
+├── normalize_streams.py                 ← recalculates norm_flow_kton_per_year; CLI for setting/clearing reference streams
+├── migrate_add_carbon.py               ← adds carbon_weight_pct, carbon_weight_pct_manual to components; carbon_fraction to stream_composition; carbon_pct, carbon_pct_complete to streams
+├── carbon.py                           ← CLI: status, recalculate, set-component, show, list-gaps
+├── industrial_cluster.db                ← output database
+├── data_exploration.ipynb               ← loads all tables into pandas, displays each
+├── component_review_analysis.md         ← pre-change analysis of needs_review=1 components
+├── requirements-server.txt              ← fastapi, uvicorn[standard], aiofiles
+├── server.py                            ← FastAPI backend (5 API endpoints + static serving)
+├── reference/
+│   └── reference_symbiosis_matcher.jsx  ← original single-file React prototype (reference only)
+├── exports/                             ← optional CSV exports of final tables
 │   ├── companies.csv
 │   ├── components.csv
 │   ├── streams.csv
 │   ├── stream_composition.csv
 │   └── flows.csv
-└── analysis/
-    └── match_candidates.py          ← symbiosis matching logic (not yet written)
+├── analysis/
+│   └── match_candidates.py              ← symbiosis scoring logic (imported by server.py)
+└── frontend/                            ← Vite + React web app
+    ├── package.json
+    ├── vite.config.js                   ← dev proxy: /api → localhost:8000
+    ├── index.html
+    └── src/
+        ├── main.jsx
+        ├── App.jsx                      ← root: data fetch, company state, tab routing
+        ├── index.css                    ← JetBrains Mono import + minimal resets
+        ├── components/
+        │   ├── ForceGraph.jsx           ← D3 force-directed network graph
+        │   ├── ScoreBar.jsx             ← single coloured score bar
+        │   ├── ScoreDetail.jsx          ← five-metric breakdown with bars
+        │   ├── AiEval.jsx               ← Claude API evaluation button + streaming result
+        │   ├── CandidateList.jsx        ← filtered/sorted candidate cards
+        │   ├── CandidateDetail.jsx      ← expanded view: scores, components, add-to-flows
+        │   ├── ManualPairing.jsx        ← manual stream pair selector + client-side scoring
+        │   └── FlowsManager.jsx         ← flows list: status cycle, notes, export JSON
+        └── lib/
+            ├── api.js                   ← fetch wrappers for all /api/* endpoints
+            ├── scoring.js               ← client-side scorePair() for manual pairing
+            └── constants.js             ← company colors, score thresholds
 ```
+
+---
+
+## Stream Normalization
+
+Per-company normalization of flow rates relative to a single reference stream. When a reference is set, all `norm_flow_kton_per_year` values for that company are computed as `flow_kton_per_year / ref_flow`, so the reference stream's value becomes `1.0` and all others scale proportionally.
+
+This is **independent** of `scaling_factor` (display-only, applied client-side). Normalization writes to the DB via `normalize_streams.py` and is never applied to the raw `flow_kton_per_year` values.
+
+### Schema
+
+- `companies.normalize_stream_id` — FK to the reference stream (`output` direction, same company, `flow > 0`). `NULL` = disabled.
+- `streams.norm_flow_kton_per_year` — computed normalized value. `NULL` when the company has no reference set.
+
+Both columns were added by `migrate_add_normalization.py`.
+
+### CLI (`normalize_streams.py`)
+
+All subcommands accept an optional `--db <path>` argument (default: `industrial_cluster.db`).
+
+```bash
+# List valid output streams for a company (shows current reference with *)
+python normalize_streams.py list <company_id>
+
+# Set the reference stream for a company (validates direction, ownership, flow > 0)
+python normalize_streams.py set <company_id> <stream_id>
+
+# Clear the reference stream for a company
+python normalize_streams.py clear <company_id>
+
+# Recalculate norm_flow_kton_per_year for all companies
+python normalize_streams.py normalize
+```
+
+`set` validates:
+- `company_id` exists in `companies`
+- `stream_id` exists in `streams`
+- Stream belongs to the specified company
+- Stream `direction = 'output'`
+- Stream `flow_kton_per_year > 0`
+
+`normalize` validates the same constraints at run time and logs a warning (skipping the company) if any fail.
+
+### Typical workflow
+
+```bash
+python normalize_streams.py list C001       # find a valid reference stream
+python normalize_streams.py set C001 S007   # set it
+python normalize_streams.py normalize       # compute norm_flow_kton_per_year
+```
+
+---
+
+## Carbon Weight % Calculation
+
+Per-component and per-stream carbon content tracking. Enables carbon accounting across the industrial cluster.
+
+### Schema
+
+- `components.carbon_weight_pct` — weight fraction of carbon (0–1). Computed as `(carbon_atoms × 12.011) / molecular_weight`. `NULL` if either value is missing. Can be manually overridden.
+- `components.carbon_weight_pct_manual` — `1` when manually set; prevents `recalculate` from overwriting.
+- `stream_composition.carbon_fraction` — `fraction × carbon_weight_pct` for non-trace rows. `NULL` when component has no `carbon_weight_pct` or row is trace.
+- `streams.carbon_pct` — sum of `carbon_fraction` across non-trace, non-unknown composition rows. Partial sums are accepted.
+- `streams.carbon_pct_complete` — `1` if all non-trace, non-unknown components have `carbon_weight_pct`; `0` if any are missing; `NULL` if no composition rows.
+
+All columns added by `migrate_add_carbon.py`. Values computed by `carbon.py recalculate`.
+
+### CLI (`carbon.py`)
+
+All subcommands accept an optional `--db <path>` argument (default: `industrial_cluster.db`).
+
+```bash
+# Summary of coverage
+python carbon.py status
+
+# Full three-layer recalculation (idempotent)
+python carbon.py recalculate
+
+# List components with NULL carbon_weight_pct, sorted by stream impact
+python carbon.py list-gaps
+
+# Full detail for a single component
+python carbon.py show <component_id>
+
+# Update molecular data or manually override carbon_weight_pct
+python carbon.py set-component <component_id> [--carbon-atoms INT] [--molecular-weight FLOAT] [--carbon-pct FLOAT] [--clear-override]
+```
+
+`set-component` automatically cascades: recomputes `carbon_weight_pct` (if not overridden), then updates `stream_composition.carbon_fraction` and `streams.carbon_pct` for all affected streams.
+
+### Edge cases
+
+- `carbon_atoms = 0` (e.g. H₂O, N₂): `carbon_weight_pct = 0.0` — carbon-free, not unknown.
+- Trace rows: `carbon_fraction = NULL`, excluded from stream sum.
+- Reserved `unknown` component (CM227): excluded from `carbon_pct` sum.
+- Partial coverage: `carbon_pct` is a partial sum; `carbon_pct_complete = 0` flags this.
 
 ---
 
@@ -389,9 +586,104 @@ project/
   - [ ] S109 `S-PURG` — 11.3% genuinely unspecified (GLYCEROL 65% + WATER 23.7% = 88.7%), data gap
   - [ ] S133/S134 `WS-FG`/`WS-LIGHT` — complementary ±3.48% overcount/undercount, transcription error in source — re-examine Excel
 - [ ] Manually fill `sector` and `location` in `companies` (14 companies, all NULL currently)
-- [ ] Write `analysis/match_candidates.py` — run candidate matching query and review results
-- [ ] Populate `flows` table with validated candidate connections
+- [x] Write `analysis/match_candidates.py` — 5-metric scoring: component_overlap, fraction_similarity, flow_compatibility, temperature_proximity, pressure_proximity. Weighted composite. 1 260 candidates at min_score ≥ 0.15 across all 14 companies.
+- [x] Add `scaling_factor` and `included` to `companies` via `migrate_add_company_columns.py`
+- [x] Add `normalize_stream_id` to `companies` and `norm_flow_kton_per_year` to `streams` via `migrate_add_normalization.py`. Per-company normalization managed via `normalize_streams.py` CLI (`list`, `set`, `clear`, `normalize` subcommands).
+- [x] Add carbon weight % tracking via `migrate_add_carbon.py` and `carbon.py`. Columns: `components.carbon_weight_pct`, `components.carbon_weight_pct_manual`, `stream_composition.carbon_fraction`, `streams.carbon_pct`, `streams.carbon_pct_complete`. 165 components calculated via formula; 131/169 streams have `carbon_pct`. Remaining gaps primarily due to missing `molecular_weight` on named materials (Water, NaOH, etc.) — use `carbon.py set-component` to fill.
+- [x] Build `server.py` — FastAPI, 5 endpoints, imports scoring from `analysis/match_candidates.py`
+- [x] Build Vite + React frontend in `frontend/` — dark theme, D3 force graph, three-tab panel (Candidates / Manual Pair / Flows), Claude API evaluation, debounced company toggles and scale sliders persisted to DB
+- [ ] Use the web app to review candidates and populate `flows` with validated symbiosis connections
 - [ ] Run graph analysis (centrality, flow volumes, cluster detection)
+
+---
+
+---
+
+## Web Application
+
+A full-stack web app for interactive symbiosis analysis. Backend is FastAPI; frontend is Vite + React.
+
+### Starting the server
+
+```bash
+cd project/
+python server.py
+# → http://localhost:8000
+```
+
+To stop: `pkill -f server.py`
+
+For frontend development (hot reload):
+```bash
+# Terminal 1 — backend
+python server.py
+
+# Terminal 2 — Vite dev server (proxies /api to :8000)
+cd frontend && npm run dev
+# → http://localhost:5173
+```
+
+To rebuild the frontend after changes:
+```bash
+cd frontend && npm run build
+```
+
+### API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/data` | Full dataset: companies, streams (with components), candidates, flows, metadata |
+| `PUT` | `/api/companies/{company_id}` | Update `scaling_factor` and/or `included` for a company |
+| `POST` | `/api/flows` | Create a new flow (auto-generates flow_id) |
+| `PUT` | `/api/flows/{flow_id}` | Update `status`, `notes`, and/or `flow_kton_per_year` |
+| `DELETE` | `/api/flows/{flow_id}` | Delete a flow |
+
+**`GET /api/data` response shape:**
+```json
+{
+  "metadata": {
+    "total_companies": 14,
+    "total_streams": 169,
+    "total_candidates": 1260,
+    "unique_company_pairs": 91,
+    "min_score_threshold": 0.15
+  },
+  "companies": [...],
+  "streams": [...],
+  "candidates": [...],
+  "flows": [...]
+}
+```
+
+Candidates are always computed across **all** 14 companies (not filtered by `included`). The frontend filters candidates to active companies client-side, so toggling a company on/off requires no re-fetch.
+
+### Candidate scoring
+
+Five metrics (imported from `analysis/match_candidates.py`):
+
+| Metric | Formula | Weight |
+|---|---|---|
+| `component_overlap` | Jaccard index of non-trace component sets | 0.35 |
+| `fraction_similarity` | 1 − mean \|frac_out − frac_in\| for shared components | 0.25 |
+| `flow_compatibility` | min(available, required) / max(available, required) | 0.20 |
+| `temperature_proximity` | 1 / (1 + \|T_out − T_in\| / 100), or 0.5 if unknown | 0.10 |
+| `pressure_proximity` | 1 / (1 + \|P_out − P_in\| / 10), or 0.5 if unknown | 0.10 |
+| `composite_score` | Weighted average of above | — |
+
+Candidates with `composite_score < 0.15` are discarded.
+
+### Frontend layout
+
+- **Left sidebar** — company toggles (`included` on/off). Active companies show a scale slider (×0.10–×5.00). Changes debounced 300 ms, persisted via `PUT /api/companies/{id}`. `scaling_factor` is display-only: applied to kton/year labels in the UI, never written to stream values in the DB.
+- **Center** — D3 force-directed graph. Company nodes (colored circles with initials), draggable. Candidate edges: dashed, colored by score. Confirmed flow edges: solid thick green with ✓ label. Minimum score slider in header filters edges client-side.
+- **Right panel — three tabs:**
+  - **Candidates** — sorted by score descending. Expandable cards with score breakdown, shared component table, "Add to Flows" and "Ask Claude" buttons.
+  - **Manual Pair** — output/input stream dropdowns (active companies only). Client-side scoring. Same detail view and action buttons.
+  - **Flows (N)** — full flow list. Status pill cycles candidate → confirmed → rejected. Inline note editing. Remove button. "Export Flows as JSON" download.
+
+### AI evaluation
+
+The "Ask Claude for Evaluation" button in candidate and manual-pair detail calls the Anthropic API directly from the browser (`claude-sonnet-4-20250514`, max_tokens 1000). The user supplies their API key via a prompt dialog; it is held in component state only (never persisted).
 
 ---
 
