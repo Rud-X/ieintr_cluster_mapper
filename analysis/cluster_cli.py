@@ -16,6 +16,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 import carbon
+import explore
 import normalize_streams
 import questionary
 
@@ -59,6 +60,16 @@ MODULES = [
              ]},
             {"label": "Clear reference stream", "fn": normalize_streams.clear_reference,
              "params": [{"prompt": "Company ID", "key": "company_id"}]},
+        ],
+    },
+    {
+        "label": "Explore",
+        "actions": [
+            {"label": "Database summary",    "fn": explore.summary,       "params": []},
+            {"label": "List companies",      "fn": explore.list_companies, "params": []},
+            {"label": "Company full dump",   "fn": explore.show_company,
+             "params": [{"prompt": "Company ID", "key": "company_id"}]},
+            {"label": "Drill-down explorer", "fn": explore.drill_down,    "params": []},
         ],
     },
 ]

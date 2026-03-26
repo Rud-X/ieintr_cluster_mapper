@@ -27,11 +27,16 @@ Industrial Cluster Analysis
 │   ├── Show component          (prompts: Component ID)
 │   ├── Set component data      (prompts: Component ID, carbon atoms*, MW*, carbon pct*)
 │   └── Clear manual override   (prompts: Component ID)
-└── Stream Normalization
-    ├── Normalize all
-    ├── List candidates         (prompts: Company ID)
-    ├── Set reference stream    (prompts: Company ID, Stream ID)
-    └── Clear reference stream  (prompts: Company ID)
+├── Stream Normalization
+│   ├── Normalize all
+│   ├── List candidates         (prompts: Company ID)
+│   ├── Set reference stream    (prompts: Company ID, Stream ID)
+│   └── Clear reference stream  (prompts: Company ID)
+└── Explore
+    ├── Database summary
+    ├── List companies
+    ├── Company full dump       (prompts: Company ID)
+    └── Drill-down explorer
 ```
 
 `*` = optional; leave blank to skip that field.
@@ -69,6 +74,27 @@ All callables receive `db_path` as a keyword argument.
 
 To add a new module: import it at the top of `cluster_cli.py`, then append
 one dict to `MODULES`. No other changes needed.
+
+## Explore module
+
+Implemented in `analysis/explore.py`. All four functions are **read-only** — no DB writes.
+
+| Action | Function | Description |
+|---|---|---|
+| Database summary | `explore.summary` | Row counts for all 5 tables; carbon coverage stats; flows by status |
+| List companies | `explore.list_companies` | Aligned table of all companies with `#streams`, sector, and included flag |
+| Company full dump | `explore.show_company(company_id)` | Company metadata + every stream header + composition rows |
+| Drill-down explorer | `explore.drill_down` | Interactive arrow-key navigator: company → stream → composition |
+
+### Drill-down navigation
+
+```
+Company picker  →  Stream picker  →  Composition detail
+     ↑                  ↑                    ↑
+  "← Exit"          "← Back"       "← Back to streams"
+```
+
+Ctrl-C at any level exits cleanly.
 
 ## Dependency
 
