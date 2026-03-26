@@ -10,13 +10,19 @@ Extract material flow data from an Excel-derived CSV and organize it into a SQLi
 
 ### Build the database from scratch
 
-Run migrations in this exact order (each is idempotent):
+```bash
+python migrations/run_migration.py           # runs all 5 steps in order
+python migrations/run_migration.py --dry-run # previews step 5 (correct_components) without writing
+```
+
+Or run individual steps manually (each is idempotent):
 
 ```bash
 python migrations/extract.py
 python migrations/migrate_add_company_columns.py
 python migrations/migrate_add_normalization.py
 python migrations/migrate_add_carbon.py
+python migrations/correct_components.py   # resolve needs_review=1 stubs
 ```
 
 ### Analysis tools
@@ -62,6 +68,7 @@ data/raw_materials_nomenclature.csv  ─┐
 data/raw_streams_data.csv            ─┴─► migrations/extract.py ─► industrial_cluster.db
                                                                          │
                                          migrations/migrate_add_*.py ───┘ (add columns)
+                                         migrations/correct_components.py  (resolve needs_review stubs)
                                                                          │
                                          analysis/carbon.py recalculate  │ (compute values)
                                          analysis/normalize_streams.py normalize

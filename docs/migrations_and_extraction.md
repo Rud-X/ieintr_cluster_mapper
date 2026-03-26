@@ -135,3 +135,35 @@ Adds carbon tracking columns across three tables.
 | `streams` | `carbon_pct_complete` | `NULL` |
 
 Values are computed afterward by `analysis/carbon.py recalculate`.
+
+### `migrations/correct_components.py`
+
+Resolves components auto-inserted with `needs_review=1` during extraction. Any composition component not found in the reference nomenclature is inserted as a stub; this script applies documented corrections to clean them up.
+
+Run via `run_migration.py` (step 5) or standalone:
+
+```bash
+python migrations/correct_components.py [--db PATH] [--dry-run]
+```
+
+`--dry-run` previews all changes without writing to the database.
+
+#### Correction types
+
+| Type | Effect |
+|---|---|
+| `Merge(src, into, reason)` | Redirects all `stream_composition` rows from `src` to `into`, appends `src` as an alias on `into`, deletes `src` component row. |
+| `Enrich(name, reason, ...)` | Fills in `category`, `cas_number`, `molecular_weight`, `carbon_atoms` for a genuinely new component and sets `needs_review=0`. |
+| `Flag(name, notes)` | Writes an explanatory note to `components.notes` and keeps `needs_review=1` for manual follow-up. |
+
+All corrections are **idempotent**: `Merge` silently skips if `src` is already absent; `Enrich` and `Flag` are plain `UPDATE`s.
+
+Lookups use the component **name** (`COLLATE NOCASE`), not the auto-generated `component_id`, so corrections survive a full re-extraction even if IDs shift.
+
+#### Resolving a Flag
+
+Once you have identified the correct resolution from source data:
+
+1. Replace the `Flag(...)` entry in `CORRECTIONS` with a `Merge(...)` or `Enrich(...)`.
+2. Add a `reason` explaining the decision.
+3. Commit and re-run `python migrations/run_migration.py`.
