@@ -1,0 +1,157 @@
+"""
+cluster_cli.py
+
+Interactive TUI menu for the industrial cluster analysis tools.
+Wraps carbon.py and normalize_streams.py via arrow-key navigation.
+
+Usage:
+    python analysis/cluster_cli.py
+    python analysis/cluster_cli.py --db industrial_cluster.db
+"""
+
+import argparse
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+import carbon
+import normalize_streams
+import questionary
+
+DB_PATH = "industrial_cluster.db"
+
+# ---------------------------------------------------------------------------
+# Module registry
+# ---------------------------------------------------------------------------
+
+MODULES = [
+    {
+        "label": "Carbon Accounting",
+        "actions": [
+            {"label": "Status overview",        "fn": carbon.status,      "params": []},
+            {"label": "Recalculate all",         "fn": carbon.recalculate, "params": []},
+            {"label": "List gaps",               "fn": carbon.list_gaps,   "params": []},
+            {"label": "Show component",          "fn": carbon.show,
+             "params": [{"prompt": "Component ID", "key": "component_id"}]},
+            {"label": "Set component data",      "fn": carbon.set_component,
+             "params": [
+                 {"prompt": "Component ID",                "key": "component_id"},
+                 {"prompt": "Carbon atoms (blank=skip)",   "key": "carbon_atoms",     "optional": True, "type": int},
+                 {"prompt": "Molecular weight (blank=skip)", "key": "molecular_weight", "optional": True, "type": float},
+                 {"prompt": "Carbon pct 0-1 (blank=skip)", "key": "carbon_pct",        "optional": True, "type": float},
+             ]},
+            {"label": "Clear manual override",
+             "fn": lambda component_id, db_path: carbon.set_component(component_id, clear_override=True, db_path=db_path),
+             "params": [{"prompt": "Component ID", "key": "component_id"}]},
+        ],
+    },
+    {
+        "label": "Stream Normalization",
+        "actions": [
+            {"label": "Normalize all",          "fn": normalize_streams.normalize,       "params": []},
+            {"label": "List candidates",        "fn": normalize_streams.list_candidates,
+             "params": [{"prompt": "Company ID", "key": "company_id"}]},
+            {"label": "Set reference stream",   "fn": normalize_streams.set_reference,
+             "params": [
+                 {"prompt": "Company ID", "key": "company_id"},
+                 {"prompt": "Stream ID",  "key": "stream_id"},
+             ]},
+            {"label": "Clear reference stream", "fn": normalize_streams.clear_reference,
+             "params": [{"prompt": "Company ID", "key": "company_id"}]},
+        ],
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def collect_params(param_specs: list, db_path: str) -> dict | None:
+    """
+    Prompt for each param spec. Optional params are skipped if blank.
+    Returns {"db_path": db_path, **collected} or None on cancel/invalid input.
+    """
+    collected = {}
+    for spec in param_specs:
+        raw = questionary.text(spec["prompt"] + ":").ask()
+        if raw is None:  # Ctrl-C
+            return None
+
+        raw = raw.strip()
+
+        if not raw:
+            if spec.get("optional"):
+                continue
+            print(f"  (cancelled — {spec['prompt']} is required)")
+            return None
+
+        cast = spec.get("type")
+        if cast is not None:
+            try:
+                raw = cast(raw)
+            except (ValueError, TypeError):
+                print(f"  Error: expected {cast.__name__} for '{spec['prompt']}'.")
+                return None
+
+        collected[spec["key"]] = raw
+
+    return {"db_path": db_path, **collected}
+
+
+def run_module(module: dict, db_path: str) -> None:
+    """Show action selector for a module; loop until Back or Ctrl-C."""
+    action_labels = [a["label"] for a in module["actions"]] + ["← Back"]
+
+    while True:
+        choice = questionary.select(
+            module["label"],
+            choices=action_labels,
+        ).ask()
+
+        if choice is None or choice == "← Back":
+            return
+
+        action = next(a for a in module["actions"] if a["label"] == choice)
+
+        if action["params"]:
+            kwargs = collect_params(action["params"], db_path)
+            if kwargs is None:
+                continue
+        else:
+            kwargs = {"db_path": db_path}
+
+        print()
+        try:
+            action["fn"](**kwargs)
+        except Exception as exc:
+            print(f"Error: {exc}")
+        print()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main(db_path: str = DB_PATH) -> None:
+    module_labels = [m["label"] for m in MODULES] + ["Quit"]
+
+    while True:
+        choice = questionary.select(
+            "Industrial Cluster Analysis",
+            choices=module_labels,
+        ).ask()
+
+        if choice is None or choice == "Quit":
+            print("Goodbye.")
+            return
+
+        module = next(m for m in MODULES if m["label"] == choice)
+        run_module(module, db_path)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Interactive TUI for industrial cluster analysis.")
+    parser.add_argument("--db", default=DB_PATH, help="Path to SQLite database.")
+    args = parser.parse_args()
+    main(args.db)
