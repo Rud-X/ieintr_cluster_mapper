@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import carbon
 import explore
+import manage_companies_tui
+import manage_flows_tui
 import normalize_streams
 import questionary
 
@@ -45,21 +47,6 @@ MODULES = [
             {"label": "Clear manual override",
              "fn": lambda component_id, db_path: carbon.set_component(component_id, clear_override=True, db_path=db_path),
              "params": [{"prompt": "Component ID", "key": "component_id"}]},
-        ],
-    },
-    {
-        "label": "Stream Normalization",
-        "actions": [
-            {"label": "Normalize all",          "fn": normalize_streams.normalize,       "params": []},
-            {"label": "List candidates",        "fn": normalize_streams.list_candidates,
-             "params": [{"prompt": "Company ID", "key": "company_id"}]},
-            {"label": "Set reference stream",   "fn": normalize_streams.set_reference,
-             "params": [
-                 {"prompt": "Company ID", "key": "company_id"},
-                 {"prompt": "Stream ID",  "key": "stream_id"},
-             ]},
-            {"label": "Clear reference stream", "fn": normalize_streams.clear_reference,
-             "params": [{"prompt": "Company ID", "key": "company_id"}]},
         ],
     },
     {
@@ -145,7 +132,7 @@ def run_module(module: dict, db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main(db_path: str = DB_PATH) -> None:
-    module_labels = [m["label"] for m in MODULES] + ["Quit"]
+    module_labels = ["Manage Companies", "Manage Flows"] + [m["label"] for m in MODULES] + ["Quit"]
 
     while True:
         choice = questionary.select(
@@ -156,6 +143,14 @@ def main(db_path: str = DB_PATH) -> None:
         if choice is None or choice == "Quit":
             print("Goodbye.")
             return
+
+        if choice == "Manage Companies":
+            manage_companies_tui.run(db_path)
+            continue
+
+        if choice == "Manage Flows":
+            manage_flows_tui.run(db_path)
+            continue
 
         module = next(m for m in MODULES if m["label"] == choice)
         run_module(module, db_path)

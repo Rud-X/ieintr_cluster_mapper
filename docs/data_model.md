@@ -13,6 +13,7 @@ erDiagram
         TEXT name
         TEXT sector
         TEXT location
+        TEXT node_type
         REAL scaling_factor
         INTEGER included
         TEXT normalize_stream_id FK
@@ -65,6 +66,7 @@ erDiagram
         TEXT from_stream_id FK
         TEXT to_stream_id FK
         REAL flow_kton_per_year
+        TEXT flow_type
         TEXT status
         TEXT notes
     }
@@ -82,16 +84,17 @@ erDiagram
 
 ## `companies` — Graph nodes
 
-One row per company. Auto-generated from distinct values in `raw_streams_data.csv` during extraction; `sector` and `location` are filled manually afterward.
+One row per company **or external node**. Real companies are auto-generated from distinct values in `raw_streams_data.csv` during extraction; external nodes are added manually via the TUI. `sector` and `location` are filled manually afterward.
 
 | Column | Type | Description |
 |---|---|---|
 | `company_id` | TEXT (PK) | e.g. `C001` |
-| `name` | TEXT | Company name (matches `company` column in CSV) |
+| `name` | TEXT | Company or node name |
 | `sector` | TEXT | Industry sector — filled manually |
 | `location` | TEXT | Zone or address — filled manually |
+| `node_type` | TEXT | `'company'` (default), `'import_source'`, `'export_sink'`, or `'waste_facility'`. See **External Nodes** below. Added by `migrate_add_external_nodes.py`. |
 | `scaling_factor` | REAL | Display multiplier (0.1–5.0, default 1.0). Applied client-side to kton/year display only; raw DB values are never modified. Added by `migrate_add_company_columns.py`. |
-| `included` | INTEGER | `1` = participates in cluster analysis, `0` = excluded. Excluded companies are hidden in the graph but their data remains in the DB. Added by `migrate_add_company_columns.py`. |
+| `included` | INTEGER | `1` = visible in cluster analysis, `0` = excluded. Added by `migrate_add_company_columns.py`. |
 | `normalize_stream_id` | TEXT (FK → streams) | Reference stream for per-company normalization. Must be an `output`-direction stream of this company with `flow > 0`. `NULL` = normalization disabled. Added by `migrate_add_normalization.py`. |
 
 ---
@@ -162,18 +165,46 @@ Each row is one component within one stream. Fractions are stored as decimals (0
 
 ## `flows` — Graph edges (proposed/confirmed connections)
 
-Starts **empty**. Populated after matching analysis identifies candidate industrial symbiosis links.
+Starts **empty**. Populated after matching analysis identifies candidate industrial symbiosis links, or manually via the TUI.
+
+Every flow has exactly **two node endpoints** (`from_company_id` and `to_company_id` are always non-null), preserving the graph invariant for network analysis. Stream references may be NULL when an endpoint is an external node.
 
 | Column | Type | Description |
 |---|---|---|
 | `flow_id` | TEXT (PK) | e.g. `F001` |
-| `from_company_id` | TEXT (FK → companies) | Supplier company |
-| `to_company_id` | TEXT (FK → companies) | Receiver company |
-| `from_stream_id` | TEXT (FK → streams) | Output stream being supplied |
-| `to_stream_id` | TEXT (FK → streams) | Input stream being satisfied |
+| `from_company_id` | TEXT NOT NULL (FK → companies) | Source node — company or external node |
+| `to_company_id` | TEXT NOT NULL (FK → companies) | Destination node — company or external node |
+| `from_stream_id` | TEXT nullable (FK → streams) | Output stream being supplied. **NULL** when `from_company_id` is an `import_source`. |
+| `to_stream_id` | TEXT nullable (FK → streams) | Input stream being satisfied. **NULL** when `to_company_id` is an `export_sink` or `waste_facility`. |
 | `flow_kton_per_year` | REAL | Agreed or estimated quantity |
+| `flow_type` | TEXT | `internal`, `import`, `export`, or `waste_to_wmf`. Auto-derived from node types. Added by `migrate_add_external_nodes.py`. |
 | `status` | TEXT | `candidate`, `confirmed`, or `rejected` |
 | `notes` | TEXT | Optional |
+
+### Flow types
+
+| `flow_type` | From node | To node | Stream NULLs |
+|---|---|---|---|
+| `internal` | `company` | `company` | Neither NULL |
+| `import` | `import_source` | `company` | `from_stream_id` is NULL |
+| `export` | `company` | `export_sink` | `to_stream_id` is NULL |
+| `waste_to_wmf` | `company` | `waste_facility` | `to_stream_id` is NULL |
+
+---
+
+## External Nodes
+
+External nodes use the same `companies` table but have `node_type != 'company'`. They represent cluster boundary entities:
+
+| `node_type` | Role | Has streams? |
+|---|---|---|
+| `import_source` | Raw material supplier outside the cluster | Optional — can have output streams if needed |
+| `export_sink` | Product buyer outside the cluster | Optional — can have input streams if needed |
+| `waste_facility` | Material sink (WMF, landfill, etc.) — outflow not modelled by default | Optional — can have output streams if the WMF re-processes material |
+
+External nodes appear in the graph and have named identities. They are created manually via `+ Add External Node` in the Manage Companies TUI.
+
+**Graph invariant:** Every `flows` row always has two non-null company endpoints. Nulls appear only on the stream-reference side.
 
 ---
 

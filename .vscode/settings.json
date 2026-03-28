@@ -1,0 +1,6 @@
+{
+    "python-envs.workspaceSearchPaths": [
+        "./**/.venv",
+        "/home/rud/Documents/01_IE/08_INTR/.venv_INTR"
+    ]
+}

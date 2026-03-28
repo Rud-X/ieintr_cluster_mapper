@@ -19,7 +19,7 @@ def normalize(db_path: str = DB_PATH) -> None:
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    cur.execute("SELECT company_id, name, normalize_stream_id FROM companies")
+    cur.execute("SELECT company_id, name, normalize_stream_id, normalize_setpoint FROM companies")
     companies = cur.fetchall()
 
     count_normalized = 0
@@ -33,7 +33,11 @@ def normalize(db_path: str = DB_PATH) -> None:
 
         if ref_stream_id is None:
             cur.execute(
-                "UPDATE streams SET norm_flow_kton_per_year = NULL WHERE company_id = ?",
+                "UPDATE streams SET norm_flow_kton_per_year = flow_kton_per_year WHERE company_id = ?",
+                (company_id,),
+            )
+            cur.execute(
+                "UPDATE companies SET scaling_factor = 1.0 WHERE company_id = ?",
                 (company_id,),
             )
             count_skipped += 1
@@ -69,9 +73,14 @@ def normalize(db_path: str = DB_PATH) -> None:
             )
             continue
 
+        setpoint = company["normalize_setpoint"] if company["normalize_setpoint"] is not None else 1.0
         cur.execute(
-            "UPDATE streams SET norm_flow_kton_per_year = flow_kton_per_year / ? WHERE company_id = ?",
-            (ref_flow, company_id),
+            "UPDATE streams SET norm_flow_kton_per_year = flow_kton_per_year / ? * ? WHERE company_id = ?",
+            (ref_flow, setpoint, company_id),
+        )
+        cur.execute(
+            "UPDATE companies SET scaling_factor = ? WHERE company_id = ?",
+            (setpoint / ref_flow, company_id),
         )
         count_normalized += 1
 

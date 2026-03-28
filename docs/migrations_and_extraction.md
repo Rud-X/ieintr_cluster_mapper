@@ -140,7 +140,7 @@ Values are computed afterward by `analysis/carbon.py recalculate`.
 
 Resolves components auto-inserted with `needs_review=1` during extraction. Any composition component not found in the reference nomenclature is inserted as a stub; this script applies documented corrections to clean them up.
 
-Run via `run_migration.py` (step 5) or standalone:
+Run via `run_migration.py` (step 8) or standalone:
 
 ```bash
 python migrations/correct_components.py [--db PATH] [--dry-run]
@@ -167,3 +167,53 @@ Once you have identified the correct resolution from source data:
 1. Replace the `Flag(...)` entry in `CORRECTIONS` with a `Merge(...)` or `Enrich(...)`.
 2. Add a `reason` explaining the decision.
 3. Commit and re-run `python migrations/run_migration.py`.
+
+---
+
+### `migrations/seed_manual_companies.py` — manual company seeding (step 7)
+
+Re-applies manually-managed company additions after every extraction. Runs before `correct_components.py`.
+
+Run via `run_migration.py` (step 7) or standalone:
+
+```bash
+python migrations/seed_manual_companies.py [--db PATH] [--dry-run]
+```
+
+`--dry-run` previews all changes without writing to the database.
+
+#### Seed types
+
+| Type | Effect |
+|---|---|
+| `ExternalNode(name, node_type, sector, location)` | Inserts an external node if absent; skips if already present with the same `node_type`; warns if present with a different type. |
+| `CompanyMeta(name, sector, location, included)` | Updates non-null metadata fields on a company matched by exact name. |
+
+All seeds are **idempotent**: safe to re-run on an already-seeded database.
+
+Lookups use the company **name** (case-sensitive exact match), not the auto-generated `company_id`.
+
+#### Workflow for external nodes
+
+Every external node (import source, export sink, waste facility) created via the TUI must also be declared in the `SEEDS` list to survive a full re-extraction:
+
+1. Add the node via `+ Add External Node` in the TUI.
+2. Add a matching `ExternalNode(...)` line to `SEEDS` in `seed_manual_companies.py`.
+3. Commit the file — the node now persists across re-extractions.
+
+When **deleting** an external node via the TUI:
+
+1. Delete the node via the TUI (`Delete...` → type `"delete company"`).
+2. Remove the corresponding `ExternalNode(...)` line from `SEEDS`.
+3. Commit the file — the node will not reappear on the next re-extraction.
+
+The TUI prints a reminder after every external node deletion.
+
+#### Workflow for company metadata
+
+Company `sector`, `location`, and `included` values set via the TUI are lost on re-extraction. Declare them as `CompanyMeta(...)` entries in `SEEDS` to preserve them:
+
+```python
+CompanyMeta("Hydrogen Plant",        sector="Energy",    location="Zone A"),
+CompanyMeta("Solid Waste Management", included=0),
+```
