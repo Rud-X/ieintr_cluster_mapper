@@ -45,10 +45,13 @@ def _fmt_flow_row(f, fid_w: int, fc_w: int, fs_w: int, tc_w: int, ts_w: int) -> 
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run(db_path: str = DB_PATH, company_filter: str = None) -> None:
-    """Flow table screen. Pass company_filter to show only that company's flows."""
+def run(db_path: str = DB_PATH, company_filter: str = None, stream_filter: str = None) -> None:
+    """Flow table screen. Pass company_filter or stream_filter to narrow the list."""
     while True:
-        if company_filter:
+        if stream_filter:
+            flows = manage_companies.get_flows_for_stream(stream_filter, db_path)
+            title = f"Flows — stream {stream_filter}"
+        elif company_filter:
             flows = manage_companies.get_flows_for_company(company_filter, db_path)
             title = f"Flows — {company_filter}"
         else:

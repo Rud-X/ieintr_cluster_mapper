@@ -275,6 +275,15 @@ CORRECTIONS: list = [
             "before merging."
         ),
     ),
+    Merge("Water", "Water",
+          "Same material"),
+
+    Enrich(
+        name="Water",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=18.015,
+    ),
+
 ]
 
 

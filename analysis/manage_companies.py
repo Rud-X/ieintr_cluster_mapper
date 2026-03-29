@@ -331,6 +331,18 @@ def get_flows_for_company(company_id: str, db_path: str = DB_PATH) -> list:
     return rows
 
 
+def get_flows_for_stream(stream_id: str, db_path: str = DB_PATH) -> list:
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        _FLOWS_JOIN + " WHERE f.from_stream_id = ? OR f.to_stream_id = ? ORDER BY f.flow_id",
+        (stream_id, stream_id),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
 def get_flow(flow_id: str, db_path: str = DB_PATH):
     conn = _connect(db_path)
     cur = conn.cursor()

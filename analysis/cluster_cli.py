@@ -16,6 +16,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 import carbon
+import carbon_tui
 import explore
 import manage_companies_tui
 import manage_flows_tui
@@ -32,21 +33,10 @@ MODULES = [
     {
         "label": "Carbon Accounting",
         "actions": [
-            {"label": "Status overview",        "fn": carbon.status,      "params": []},
-            {"label": "Recalculate all",         "fn": carbon.recalculate, "params": []},
-            {"label": "List gaps",               "fn": carbon.list_gaps,   "params": []},
-            {"label": "Show component",          "fn": carbon.show,
-             "params": [{"prompt": "Component ID", "key": "component_id"}]},
-            {"label": "Set component data",      "fn": carbon.set_component,
-             "params": [
-                 {"prompt": "Component ID",                "key": "component_id"},
-                 {"prompt": "Carbon atoms (blank=skip)",   "key": "carbon_atoms",     "optional": True, "type": int},
-                 {"prompt": "Molecular weight (blank=skip)", "key": "molecular_weight", "optional": True, "type": float},
-                 {"prompt": "Carbon pct 0-1 (blank=skip)", "key": "carbon_pct",        "optional": True, "type": float},
-             ]},
-            {"label": "Clear manual override",
-             "fn": lambda component_id, db_path: carbon.set_component(component_id, clear_override=True, db_path=db_path),
-             "params": [{"prompt": "Component ID", "key": "component_id"}]},
+            {"label": "Status overview",    "fn": carbon.status,                "params": []},
+            {"label": "Recalculate all",    "fn": carbon.recalculate,           "params": []},
+            {"label": "Browse Components",  "fn": carbon_tui.browse_components, "params": []},
+            {"label": "Browse Streams",     "fn": carbon_tui.browse_streams,    "params": []},
         ],
     },
     {
@@ -132,7 +122,11 @@ def run_module(module: dict, db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main(db_path: str = DB_PATH) -> None:
-    module_labels = ["Manage Companies", "Manage Flows"] + [m["label"] for m in MODULES] + ["Quit"]
+    module_labels = (
+        ["Manage Companies", "Manage Flows", "Manage Streams", "Manage Components"]
+        + [m["label"] for m in MODULES]
+        + ["Quit"]
+    )
 
     while True:
         choice = questionary.select(
@@ -150,6 +144,14 @@ def main(db_path: str = DB_PATH) -> None:
 
         if choice == "Manage Flows":
             manage_flows_tui.run(db_path)
+            continue
+
+        if choice == "Manage Streams":
+            carbon_tui.manage_streams(db_path)
+            continue
+
+        if choice == "Manage Components":
+            carbon_tui.manage_components(db_path)
             continue
 
         module = next(m for m in MODULES if m["label"] == choice)
