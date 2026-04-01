@@ -1,0 +1,9 @@
+company_id,company_name,stream_id,stream_name,stream_type,direction,flow_kton_per_year,norm_flow_kton_per_year,carbon_pct_display,carbon_pct_complete,carbon_flow_kton_per_year,temperature_c,pressure_bar,notes
+C001,Hydrogen Plant,S003,FS-AIR,raw_material,input,27.0941671018658,27.0941671018658,0.01,1,0.003,15.0,1.02,
+C001,Hydrogen Plant,S002,FS-STEAM,raw_material,input,6.61459209499016,6.61459209499016,0.0,1,0.0,215.0,21.0,
+C001,Hydrogen Plant,S001,FS-NG,raw_material,input,3.34204098920932,3.34204098920932,57.72,1,1.929,20.0,20.0,
+C001,Hydrogen Plant,S005,FS-NG,raw_material,input,3.34204098920932,3.34204098920932,57.72,1,1.929,20.0,20.0,
+C001,Hydrogen Plant,S004,FS-UCH4,raw_material,input,1.0994115626045,1.0994115626045,57.72,1,0.635,15.0,1.02,
+C001,Hydrogen Plant,S007,WS-FLUE,waste,output,34.98,34.98,7.34,1,2.568,180.0,3.0,
+C001,Hydrogen Plant,S008,WS-WW,waste,output,2.16,2.16,0.01,1,0.0,40.0,1.02,
+C001,Hydrogen Plant,S006,PS-HYDRO,products,output,1.0,1.0,0.0,1,0.0,40.0,15.0,

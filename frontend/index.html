@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Industrial Cluster Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+      body {
+        background: #0f1117;
+        color: #e8eaed;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      /* Scrollbars — thumb color controlled via --scrollbar-thumb CSS variable */
+      * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, #2a2e3a) transparent; }
+      *::-webkit-scrollbar { width: 6px; height: 6px; }
+      *::-webkit-scrollbar-track { background: transparent; }
+      *::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb, #2a2e3a); border-radius: 3px; }
+      /* Loading pulse animation */
+      @keyframes pulse-bg {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      .pulse { animation: pulse-bg 1.4s ease-in-out infinite; }
+      /* Detail panel slide-in */
+      @keyframes slide-in-right {
+        from { transform: translateX(30px); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
+      }
+      .slide-in { animation: slide-in-right 0.15s ease-out forwards; }
+    </style>
+  </head>
+  <body>
+    <script>
+      (function() {
+        if (localStorage.getItem('theme') === 'light') {
+          document.body.style.background = '#f8f9fa';
+          document.body.style.color = '#111827';
+        }
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

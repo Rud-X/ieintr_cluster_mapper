@@ -59,7 +59,8 @@ def get_all_companies(db_path: str = DB_PATH) -> list:
     cur = conn.cursor()
     cur.execute("""
         SELECT c.company_id, c.name, c.sector, c.included, c.node_type,
-               c.normalize_stream_id, c.scaling_factor, c.normalize_setpoint,
+               c.normalize_stream_id, c.scaling_factor, c.scaling_factor_manual, c.normalize_setpoint,
+               c.graph_x, c.graph_y,
                COUNT(s.stream_id) AS stream_count,
                (SELECT COUNT(*) FROM flows f
                 WHERE f.from_company_id = c.company_id
@@ -221,13 +222,13 @@ def get_company_metadata_header(company_id: str, db_path: str = DB_PATH) -> dict
 
 
 def get_normalization_candidates(company_id: str, db_path: str = DB_PATH) -> list:
-    """Return output streams with flow > 0 eligible as normalization reference."""
+    """Return streams with flow > 0 eligible as normalization reference (input or output)."""
     conn = _connect(db_path)
     cur = conn.cursor()
     cur.execute("""
-        SELECT stream_id, stream_name, flow_kton_per_year
+        SELECT stream_id, stream_name, flow_kton_per_year, direction
         FROM streams
-        WHERE company_id = ? AND direction = 'output' AND flow_kton_per_year > 0
+        WHERE company_id = ? AND flow_kton_per_year > 0
         ORDER BY flow_kton_per_year DESC
     """, (company_id,))
     rows = cur.fetchall()
@@ -568,6 +569,153 @@ def delete_flow(flow_id: str, db_path: str = DB_PATH) -> None:
     conn = _connect(db_path)
     cur = conn.cursor()
     cur.execute("DELETE FROM flows WHERE flow_id = ?", (flow_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_company_graph_position(company_id: str, x: float, y: float, db_path: str = DB_PATH) -> None:
+    """Save the graph canvas position (x, y) for a company node."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE companies SET graph_x = ?, graph_y = ? WHERE company_id = ?",
+        (x, y, company_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_flow_status(flow_id: str, status: str, db_path: str = DB_PATH) -> None:
+    """Update the status of a flow. Valid values: candidate, confirmed, rejected."""
+    valid = ("candidate", "confirmed", "rejected")
+    if status not in valid:
+        raise ValueError(f"status must be one of {valid}, got '{status}'.")
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("UPDATE flows SET status = ? WHERE flow_id = ?", (status, flow_id))
+    conn.commit()
+    conn.close()
+
+
+def update_flow_notes(flow_id: str, notes: str, db_path: str = DB_PATH) -> None:
+    """Update the notes field of a flow."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("UPDATE flows SET notes = ? WHERE flow_id = ?", (notes, flow_id))
+    conn.commit()
+    conn.close()
+
+
+def update_flow_quantity(flow_id: str, flow_kton_per_year: float, db_path: str = DB_PATH) -> None:
+    """Update the flow quantity (kton/year) of a flow."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE flows SET flow_kton_per_year = ? WHERE flow_id = ?",
+        (flow_kton_per_year, flow_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_company_details(
+    company_id: str,
+    name: str = None,
+    sector: str = None,
+    location: str = None,
+    db_path: str = DB_PATH,
+) -> None:
+    """Update editable metadata fields on a company. Only provided (non-None) fields are written."""
+    updates = {}
+    if name is not None:
+        updates["name"] = name.strip()
+    if sector is not None:
+        updates["sector"] = sector.strip()
+    if location is not None:
+        updates["location"] = location.strip()
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [company_id]
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(f"UPDATE companies SET {set_clause} WHERE company_id = ?", values)
+    conn.commit()
+    conn.close()
+
+
+def get_all_streams(db_path: str = DB_PATH) -> list:
+    """Return all streams joined with company name, ordered by company then stream_id."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.*, c.name AS company_name, c.node_type
+        FROM streams s
+        JOIN companies c ON c.company_id = s.company_id
+        ORDER BY s.company_id, s.stream_id
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_all_components(db_path: str = DB_PATH) -> list:
+    """Return all components ordered by component_id."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM components ORDER BY component_id")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_stream_with_composition(stream_id: str, db_path: str = DB_PATH):
+    """Return (stream_row, composition_list) for a single stream."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.*, c.name AS company_name
+        FROM streams s
+        JOIN companies c ON c.company_id = s.company_id
+        WHERE s.stream_id = ?
+    """, (stream_id,))
+    stream = cur.fetchone()
+    if stream is None:
+        conn.close()
+        return None, []
+    cur.execute("""
+        SELECT sc.component_id, c.name, sc.fraction, sc.is_trace, sc.carbon_fraction
+        FROM stream_composition sc
+        JOIN components c ON c.component_id = sc.component_id
+        WHERE sc.stream_id = ?
+        ORDER BY sc.fraction DESC NULLS LAST
+    """, (stream_id,))
+    composition = cur.fetchall()
+    conn.close()
+    return stream, composition
+
+
+def set_custom_scaling_factor(company_id: str, value: float, db_path: str = DB_PATH) -> None:
+    """Set a manual scaling factor, clearing the reference stream."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE companies SET scaling_factor = ?, scaling_factor_manual = 1, normalize_stream_id = NULL"
+        " WHERE company_id = ?",
+        (value, company_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_custom_scaling_factor(company_id: str, db_path: str = DB_PATH) -> None:
+    """Clear the manual scaling factor override, resetting to 1.0."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE companies SET scaling_factor_manual = 0, scaling_factor = 1.0 WHERE company_id = ?",
+        (company_id,),
+    )
     conn.commit()
     conn.close()
 

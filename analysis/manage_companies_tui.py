@@ -58,8 +58,9 @@ def _make_company_choice(row, id_w: int, name_w: int, sec_w: int):
     # Gap + scale + setpoint + gap + 2-space right-pad for Nrm (3-char right-aligned field)
     part2 = f"  {scale:>7}  {setp:>7}    "
 
-    norm_style = "ansigreen" if row["normalize_stream_id"] else "ansired"
-    norm_text  = "Y"         if row["normalize_stream_id"] else "N"
+    norm_active = row["normalize_stream_id"] or row["scaling_factor_manual"]
+    norm_style = "ansigreen" if norm_active else "ansired"
+    norm_text  = "Y"         if norm_active else "N"
 
     part3 = (
         f"  {row['stream_count']:>8}  "
@@ -428,16 +429,21 @@ def _show_stream_detail(stream_id: str, db_path: str) -> None:
 def _normalization_menu(company_id: str, db_path: str) -> None:
     while True:
         company = manage_companies.get_company(company_id, db_path)
-        norm_id = company["normalize_stream_id"] if company else None
-
-        setpoint = company["normalize_setpoint"] if company["normalize_setpoint"] is not None else 1.0
-        setp_str = f"{setpoint:.3f}"
+        norm_id    = company["normalize_stream_id"] if company else None
+        is_manual  = bool(company["scaling_factor_manual"]) if company else False
+        sf         = company["scaling_factor"] if company else None
+        setpoint   = company["normalize_setpoint"] if company["normalize_setpoint"] is not None else 1.0
+        setp_str   = f"{setpoint:.3f}"
 
         print()
-        if norm_id:
+        if is_manual:
+            sf_str = f"{sf:.6f}" if sf is not None else "n/a"
+            print(f"  Scaling factor: {sf_str}  [MANUAL]")
+            print(f"  Normalization reference: (disabled — custom factor active)")
+        elif norm_id:
             ref_stream = manage_companies.get_stream(norm_id, db_path)
-            ref_name   = ref_stream["stream_name"]           if ref_stream else "?"
-            ref_flow   = ref_stream["flow_kton_per_year"]    if ref_stream else None
+            ref_name   = ref_stream["stream_name"]             if ref_stream else "?"
+            ref_flow   = ref_stream["flow_kton_per_year"]      if ref_stream else None
             ref_norm   = ref_stream["norm_flow_kton_per_year"] if ref_stream else None
             raw_str    = f"{ref_flow:.3f}"  if ref_flow  is not None else "n/a"
             norm_str   = f"{ref_norm:.3f}"  if ref_norm  is not None else "n/a"
@@ -452,10 +458,19 @@ def _normalization_menu(company_id: str, db_path: str) -> None:
         print(f"  Reference setpoint: {setp_str}")
         print()
 
+        stream_choice = questionary.Choice(
+            "Select normalization stream",
+            disabled="Custom scaling factor active" if is_manual else None,
+        )
+        choices = [stream_choice, "Recalculate normalization",
+                   "Change reference setpoint", "Set custom scaling factor"]
+        if is_manual:
+            choices.append("Clear custom scaling factor")
+        choices.append("← Back")
+
         choice = questionary.select(
             f"Normalization — {company_id}",
-            choices=["Select normalization stream", "Recalculate normalization",
-                     "Change reference setpoint", "← Back"],
+            choices=choices,
         ).ask()
 
         if choice is None or choice == "← Back":
@@ -468,12 +483,19 @@ def _normalization_menu(company_id: str, db_path: str) -> None:
             print()
         elif choice == "Change reference setpoint":
             _change_setpoint(company_id, db_path)
+        elif choice == "Set custom scaling factor":
+            _set_custom_factor(company_id, db_path)
+        elif choice == "Clear custom scaling factor":
+            print()
+            normalize_streams.clear_custom_factor(company_id=company_id, db_path=db_path)
+            normalize_streams.normalize(db_path=db_path)
+            print()
 
 
 def _select_norm_stream(company_id: str, db_path: str) -> None:
     candidates = manage_companies.get_normalization_candidates(company_id, db_path)
     if not candidates:
-        print("  (no valid output streams available for normalization)")
+        print("  (no valid streams available for normalization)")
         return
 
     company       = manage_companies.get_company(company_id, db_path)
@@ -483,7 +505,8 @@ def _select_norm_stream(company_id: str, db_path: str) -> None:
     for s in candidates:
         marker    = "[*] " if s["stream_id"] == current_ref else "    "
         flow_str  = f"{s['flow_kton_per_year']:.3f}"
-        choices.append(f"{marker}{s['stream_id']}  {flow_str} kton/yr  {s['stream_name']}")
+        dir_tag   = f"[{s['direction'][:3]}]"
+        choices.append(f"{marker}{s['stream_id']}  {dir_tag}  {flow_str} kton/yr  {s['stream_name']}")
     choices.append("← Back")
 
     choice = questionary.select(
@@ -504,6 +527,30 @@ def _select_norm_stream(company_id: str, db_path: str) -> None:
         normalize_streams.set_reference(company_id=company_id, stream_id=stream_id, db_path=db_path)
 
     normalize_streams.normalize(db_path=db_path)
+    print()
+
+
+def _set_custom_factor(company_id: str, db_path: str) -> None:
+    company = manage_companies.get_company(company_id, db_path)
+    current = company["scaling_factor"] if company else None
+    current_str = f"{current:.6f}" if current is not None else "n/a"
+    print(f"\n  Current scaling factor: {current_str}")
+    raw = questionary.text("New custom scaling factor (must be > 0):").ask()
+    if raw is None:
+        return
+    raw = raw.strip()
+    if not raw:
+        return
+    try:
+        new_val = float(raw)
+    except ValueError:
+        print("  Error: expected a number.")
+        return
+    if new_val <= 0:
+        print("  Error: scaling factor must be > 0.")
+        return
+    print()
+    normalize_streams.set_custom_factor(company_id=company_id, value=new_val, db_path=db_path)
     print()
 
 

@@ -2,7 +2,8 @@
 normalize_streams.py
 
 Recalculates norm_flow_kton_per_year for all companies.
-  - If normalize_stream_id is NULL: sets norm_flow_kton_per_year = NULL for all company streams.
+  - If scaling_factor_manual=1: uses the stored scaling_factor directly.
+  - If normalize_stream_id is NULL: sets norm_flow_kton_per_year = flow_kton_per_year.
   - If set: validates the reference stream and divides all company stream flows by ref_flow.
 
 Safe to re-run at any time (idempotent).
@@ -19,7 +20,10 @@ def normalize(db_path: str = DB_PATH) -> None:
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    cur.execute("SELECT company_id, name, normalize_stream_id, normalize_setpoint FROM companies")
+    cur.execute(
+        "SELECT company_id, name, normalize_stream_id, normalize_setpoint,"
+        " scaling_factor, scaling_factor_manual FROM companies"
+    )
     companies = cur.fetchall()
 
     count_normalized = 0
@@ -29,6 +33,22 @@ def normalize(db_path: str = DB_PATH) -> None:
     for company in companies:
         company_id = company["company_id"]
         company_name = company["name"]
+
+        # Manual scaling factor: use stored value directly, skip auto-computation
+        if company["scaling_factor_manual"]:
+            sf = company["scaling_factor"]
+            if sf is None or sf <= 0:
+                errors.append(
+                    f"  {company_name}: scaling_factor_manual=1 but scaling_factor={sf} (must be > 0)"
+                )
+                continue
+            cur.execute(
+                "UPDATE streams SET norm_flow_kton_per_year = flow_kton_per_year * ? WHERE company_id = ?",
+                (sf, company_id),
+            )
+            count_normalized += 1
+            continue
+
         ref_stream_id = company["normalize_stream_id"]
 
         if ref_stream_id is None:
@@ -57,12 +77,6 @@ def normalize(db_path: str = DB_PATH) -> None:
         if ref_stream["company_id"] != company_id:
             errors.append(
                 f"  {company_name}: reference stream '{ref_stream_id}' belongs to a different company"
-            )
-            continue
-
-        if ref_stream["direction"] != "output":
-            errors.append(
-                f"  {company_name}: reference stream '{ref_stream_id}' has direction='{ref_stream['direction']}' (must be 'output')"
             )
             continue
 
@@ -96,8 +110,80 @@ def normalize(db_path: str = DB_PATH) -> None:
             print(msg)
 
 
+def set_custom_factor(company_id: str, value: float, db_path: str = DB_PATH) -> bool:
+    """
+    Set a manual scaling factor for a company, bypassing the reference-stream formula.
+
+    Sets scaling_factor = value, scaling_factor_manual = 1, normalize_stream_id = NULL,
+    then immediately recalculates norm_flow_kton_per_year.
+
+    Returns True on success, False on validation failure.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("SELECT company_id, name FROM companies WHERE company_id = ?", (company_id,))
+    company = cur.fetchone()
+    if company is None:
+        print(f"Error: company '{company_id}' not found.")
+        conn.close()
+        return False
+
+    if value is None or value <= 0:
+        print(f"Error: scaling factor must be > 0 (got {value}).")
+        conn.close()
+        return False
+
+    cur.execute(
+        "UPDATE companies SET scaling_factor = ?, scaling_factor_manual = 1, normalize_stream_id = NULL"
+        " WHERE company_id = ?",
+        (value, company_id),
+    )
+    conn.commit()
+    conn.close()
+
+    print(f"Set custom scaling factor for {company['name']} ({company_id}): {value}")
+    normalize(db_path=db_path)
+    return True
+
+
+def clear_custom_factor(company_id: str, db_path: str = DB_PATH) -> bool:
+    """
+    Clear the manual scaling factor override for a company.
+    Resets scaling_factor_manual = 0 and scaling_factor = 1.0.
+    Returns True on success, False if company not found.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT company_id, name, scaling_factor_manual FROM companies WHERE company_id = ?",
+        (company_id,),
+    )
+    company = cur.fetchone()
+    if company is None:
+        print(f"Error: company '{company_id}' not found.")
+        conn.close()
+        return False
+
+    cur.execute(
+        "UPDATE companies SET scaling_factor_manual = 0, scaling_factor = 1.0 WHERE company_id = ?",
+        (company_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    if company["scaling_factor_manual"]:
+        print(f"Cleared custom scaling factor for {company['name']} ({company_id}).")
+    else:
+        print(f"{company['name']} ({company_id}) had no custom scaling factor set.")
+    return True
+
+
 def list_candidates(company_id: str, db_path: str = DB_PATH) -> None:
-    """Print valid reference streams (output-direction, flow > 0) for a company."""
+    """Print valid reference streams (flow > 0, input or output) for a company."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -110,8 +196,8 @@ def list_candidates(company_id: str, db_path: str = DB_PATH) -> None:
         return
 
     cur.execute(
-        "SELECT stream_id, stream_name, flow_kton_per_year, composition_raw FROM streams"
-        " WHERE company_id = ? AND direction = 'output' AND flow_kton_per_year > 0"
+        "SELECT stream_id, stream_name, flow_kton_per_year, direction, composition_raw FROM streams"
+        " WHERE company_id = ? AND flow_kton_per_year > 0"
         " ORDER BY flow_kton_per_year DESC",
         (company_id,),
     )
@@ -124,7 +210,7 @@ def list_candidates(company_id: str, db_path: str = DB_PATH) -> None:
         print("  (none)")
     for s in streams:
         marker = "  * " if s["stream_id"] == current else "    "
-        print(f"{marker}{s['stream_id']}  {s['flow_kton_per_year']:.4f} kton/yr  {s['stream_name']}")
+        print(f"{marker}{s['stream_id']}  [{s['direction']}]  {s['flow_kton_per_year']:.4f} kton/yr  {s['stream_name']}")
         print(f"       {s['composition_raw']}")
     if current:
         print(f"Current reference: {current}")
@@ -140,7 +226,6 @@ def set_reference(company_id: str, stream_id: str, db_path: str = DB_PATH) -> bo
     - company_id exists
     - stream_id exists in streams
     - stream belongs to company_id
-    - stream direction is 'output'
     - stream flow_kton_per_year > 0
 
     Returns True on success, False on validation failure.
@@ -168,11 +253,6 @@ def set_reference(company_id: str, stream_id: str, db_path: str = DB_PATH) -> bo
 
     if stream["company_id"] != company_id:
         print(f"Error: stream '{stream_id}' belongs to company '{stream['company_id']}', not '{company_id}'.")
-        conn.close()
-        return False
-
-    if stream["direction"] != "output":
-        print(f"Error: stream '{stream_id}' has direction='{stream['direction']}' (must be 'output').")
         conn.close()
         return False
 
@@ -238,6 +318,13 @@ if __name__ == "__main__":
     p_list = sub.add_parser("list", help="List valid reference streams for a company.")
     p_list.add_argument("company_id")
 
+    p_scf = sub.add_parser("set-custom-factor", help="Set a manual scaling factor for a company.")
+    p_scf.add_argument("company_id")
+    p_scf.add_argument("value", type=float)
+
+    p_ccf = sub.add_parser("clear-custom-factor", help="Clear the manual scaling factor for a company.")
+    p_ccf.add_argument("company_id")
+
     parser.add_argument("--db", default=DB_PATH)
     args = parser.parse_args()
 
@@ -249,3 +336,7 @@ if __name__ == "__main__":
         clear_reference(args.company_id, args.db)
     elif args.command == "list":
         list_candidates(args.company_id, args.db)
+    elif args.command == "set-custom-factor":
+        set_custom_factor(args.company_id, args.value, args.db)
+    elif args.command == "clear-custom-factor":
+        clear_custom_factor(args.company_id, args.db)
