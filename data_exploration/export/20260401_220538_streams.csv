@@ -1,0 +1,23 @@
+company_id,company_name,stream_id,stream_name,stream_type,flow_kton_per_year,norm_flow_kton_per_year,carbon_pct_%,carbon_pct_complete
+C002,Natural Gas CHP,S012,FS-WATER,raw_material,960.0,926.266,0.0,1
+C002,Natural Gas CHP,S013,PS-LPS,products,320.0,308.755,0.0,1
+C002,Natural Gas CHP,S015,PS-HPS,products,320.0,308.755,0.0,1
+C002,Natural Gas CHP,S014,PS-MPS,products,320.0,308.755,0.0,1
+C003,Olefins Production Plant,S018,Steam,raw_material,1500.0,2277.81,0.0,1
+C003,Olefins Production Plant,S021,Dilution water,raw_material,146.575,222.58,0.0,1
+C003,Olefins Production Plant,S020,NaOH,raw_material,17.538,26.632,0.0,1
+C003,Olefins Production Plant,S024,Make-up water,raw_material,1.499,2.276,0.0,1
+C003,Olefins Production Plant,S039,Dirty water (WS-DW),waste,1470.525,2233.051,0.13,1
+C003,Olefins Production Plant,S038,Effluent,waste,113.641,172.568,9.03,1
+C003,Olefins Production Plant,S040,Water,waste,91.846,139.472,0.0,1
+C003,Olefins Production Plant,S043,Waste water,waste,1.125,1.709,0.29,1
+C004,Aromatics Production Plant,S052,FS-WAT,raw_material,129.71,34.265,0.0,1
+C004,Aromatics Production Plant,S072,WS-WW,waste,6.025,1.592,1.78,1
+C005,Biogas Plant,S075,Dilution water,raw_material,13520.0,245.818,0.0,1
+C005,Biogas Plant,S080,Dilution water,waste,12683.0,230.6,0.0,1
+C010,Methanol Production Plant,S130,FS-WATER,raw_material,157.214,503.262,0.0,1
+C010,Methanol Production Plant,S126,FS-BFW1,raw_material,80.204,256.745,0.0,1
+C010,Methanol Production Plant,S136,WS-W1,waste,88.97,284.806,0.0,1
+C010,Methanol Production Plant,S137,WS-W2,waste,22.449,71.862,0.16,1
+C010,Methanol Production Plant,S132,PS-MPS,products,80.204,256.745,0.0,1
+C013,DME Plant,S158,WS-WATER,waste,26.332,54.777,0.02,1

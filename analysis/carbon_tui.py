@@ -54,6 +54,71 @@ def _set_field_in_block(block: str, field: str, value) -> str:
     return block[:close] + f'\n        {field}={value},' + block[close:]
 
 
+def _next_composition_id(cur: sqlite3.Cursor) -> str:
+    """Return next available CP### composition_id."""
+    cur.execute("SELECT composition_id FROM stream_composition ORDER BY composition_id")
+    ids = [r["composition_id"] for r in cur.fetchall()]
+    numeric = [int(m.group(1)) for cid in ids if (m := re.fullmatch(r"CP(\d+)", cid))]
+    return f"CP{max(numeric, default=0) + 1:03d}"
+
+
+def _recalculate_stream_carbon(
+    stream_id: str, cur: sqlite3.Cursor, unknown_id: str | None
+) -> None:
+    """Targeted layers 2+3 carbon recalculation for a single stream."""
+    # Layer 2: carbon_fraction for non-trace rows
+    cur.execute("""
+        UPDATE stream_composition
+        SET carbon_fraction = (
+            SELECT sc.fraction * c.carbon_weight_pct
+            FROM stream_composition sc
+            JOIN components c ON sc.component_id = c.component_id
+            WHERE sc.composition_id = stream_composition.composition_id
+              AND c.carbon_weight_pct IS NOT NULL
+              AND sc.is_trace = 0
+        )
+        WHERE stream_id = ? AND is_trace = 0
+    """, (stream_id,))
+    cur.execute("""
+        UPDATE stream_composition
+        SET carbon_fraction = NULL
+        WHERE stream_id = ? AND is_trace = 0
+          AND component_id IN (
+              SELECT component_id FROM components WHERE carbon_weight_pct IS NULL
+          )
+    """, (stream_id,))
+    cur.execute(
+        "UPDATE stream_composition SET carbon_fraction = NULL WHERE stream_id = ? AND is_trace = 1",
+        (stream_id,),
+    )
+    # Layer 3: carbon_pct and carbon_pct_complete on the stream
+    unknown_filter = f"AND sc.component_id != '{unknown_id}'" if unknown_id else ""
+    cur.execute(f"""
+        UPDATE streams SET
+            carbon_pct = (
+                SELECT CASE
+                    WHEN SUM(CASE WHEN sc.carbon_fraction IS NOT NULL THEN 1 ELSE 0 END) > 0
+                        THEN SUM(COALESCE(sc.carbon_fraction, 0))
+                    ELSE NULL
+                END
+                FROM stream_composition sc
+                JOIN components c ON sc.component_id = c.component_id
+                WHERE sc.stream_id = ? AND sc.is_trace = 0 {unknown_filter}
+            ),
+            carbon_pct_complete = (
+                SELECT CASE
+                    WHEN COUNT(*) = 0 THEN NULL
+                    WHEN SUM(CASE WHEN c.carbon_weight_pct IS NULL THEN 1 ELSE 0 END) = 0 THEN 1
+                    ELSE 0
+                END
+                FROM stream_composition sc
+                JOIN components c ON sc.component_id = c.component_id
+                WHERE sc.stream_id = ? AND sc.is_trace = 0 {unknown_filter}
+            )
+        WHERE stream_id = ?
+    """, (stream_id, stream_id, stream_id))
+
+
 # ---------------------------------------------------------------------------
 # correct_components.py updater
 # ---------------------------------------------------------------------------
@@ -242,6 +307,77 @@ def _pick_merge_target(src_id: str, src_name: str, db_path: str):
             return (search_choice, name_lookup[search_choice])
 
         name_lookup = {r['component_id']: r['name'] for r in all_rows}
+        return (choice, name_lookup[choice])
+
+
+def _pick_component(db_path: str, exclude_ids: list | None = None) -> tuple | None:
+    """Interactive component picker. Returns (component_id, name) or None on cancel."""
+    exclude_ids = set(exclude_ids or [])
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT component_id, name FROM components ORDER BY name")
+    all_rows = [r for r in cur.fetchall() if r['component_id'] not in exclude_ids]
+    conn.close()
+
+    if not all_rows:
+        print("  (no components available)")
+        return None
+
+    def _build_choices():
+        choices = [questionary.Choice(title="Search by name...", value="__search__")]
+        choices.append(questionary.Separator("─── All components ───"))
+        for r in all_rows:
+            choices.append(questionary.Choice(title=f"{r['component_id']}  {r['name']}", value=r['component_id']))
+        choices.append(questionary.Separator())
+        choices.append(questionary.Choice(title="← Cancel", value="__cancel__"))
+        return choices
+
+    name_lookup = {r['component_id']: r['name'] for r in all_rows}
+    alias_pool = {r['name'].lower(): r['component_id'] for r in all_rows}
+
+    while True:
+        choice = questionary.select("Pick component:", choices=_build_choices()).ask()
+
+        if choice is None or choice == "__cancel__":
+            return None
+
+        if choice == "__search__":
+            query = questionary.text("Search by name:").ask()
+            if query is None:
+                return None
+            query = query.strip()
+            if not query:
+                continue
+            matches = difflib.get_close_matches(query.lower(), alias_pool.keys(), n=8, cutoff=0.3)
+            result_ids = list(dict.fromkeys(alias_pool[m] for m in matches))
+            results = [(cid, name_lookup[cid]) for cid in result_ids if cid in name_lookup]
+
+            if not results:
+                print(f"  (no matches for '{query}')")
+                search_choices = [
+                    questionary.Choice(title="← Back to full list", value="__back__"),
+                    questionary.Choice(title="← Cancel", value="__cancel__"),
+                ]
+            else:
+                search_choices = [
+                    questionary.Choice(title=f"{cid}  {name}", value=cid)
+                    for cid, name in results
+                ] + [
+                    questionary.Separator(),
+                    questionary.Choice(title="← Back to full list", value="__back__"),
+                    questionary.Choice(title="← Cancel", value="__cancel__"),
+                ]
+
+            search_choice = questionary.select(
+                f"Search results for '{query}':", choices=search_choices
+            ).ask()
+
+            if search_choice is None or search_choice == "__cancel__":
+                return None
+            if search_choice == "__back__":
+                continue
+            return (search_choice, name_lookup[search_choice])
+
         return (choice, name_lookup[choice])
 
 
@@ -540,7 +676,7 @@ def _component_submenu(component_id: str, db_path: str) -> None:
         print(f"    carbon_weight_pct: {pct_str}")
         print(f"    needs_review     : {comp['needs_review']}")
 
-        choices = ["Set molecular weight", "Set carbon atoms", "Set both"]
+        choices = ["Set molecular weight", "Set carbon atoms", "Set both", "Set manual carbon %"]
         if comp['carbon_weight_pct_manual']:
             choices.append("Clear manual override")
         choices.append("Merge with another component")
@@ -569,6 +705,26 @@ def _component_submenu(component_id: str, db_path: str) -> None:
         if action == "Clear manual override":
             print()
             carbon.set_component(component_id, clear_override=True, db_path=db_path)
+            continue
+
+        if action == "Set manual carbon %":
+            raw = questionary.text("Carbon weight % (0 – 100):").ask()
+            if raw is None:
+                continue
+            raw = raw.strip()
+            if not raw:
+                print("  Cancelled.")
+                continue
+            try:
+                pct = float(raw)
+            except ValueError:
+                print("  Error: expected a number.")
+                continue
+            if not (0.0 <= pct <= 100.0):
+                print("  Error: value must be between 0 and 100.")
+                continue
+            print()
+            carbon.set_component(component_id, carbon_pct=pct / 100.0, db_path=db_path)
             continue
 
         mw = None
@@ -727,6 +883,244 @@ def _review_stream_components(stream_id: str, db_path: str) -> None:
 # ---------------------------------------------------------------------------
 # Stream detail
 # ---------------------------------------------------------------------------
+# Composition editing
+# ---------------------------------------------------------------------------
+
+def _composition_element_actions(
+    row: sqlite3.Row, stream_id: str, db_path: str
+) -> None:
+    """Submenu for a single composition element: change fraction, swap component, or remove."""
+    composition_id = row['composition_id']
+    component_id   = row['component_id']
+    comp_name      = row['name']
+    fraction       = row['fraction']
+    is_trace       = row['is_trace']
+
+    print(f"\n  {composition_id}  {component_id}  {comp_name}")
+    print(f"    fraction : {fraction}")
+    print(f"    is_trace : {bool(is_trace)}")
+
+    action = questionary.select(
+        f"Edit composition element",
+        choices=[
+            questionary.Choice(title="Change fraction",  value="fraction"),
+            questionary.Choice(title="Swap component",   value="swap"),
+            questionary.Choice(title="Remove element",   value="remove"),
+            questionary.Choice(title="← Back",           value="__back__"),
+        ],
+    ).ask()
+
+    if action is None or action == "__back__":
+        return
+
+    conn = _connect(db_path)
+    cur  = conn.cursor()
+
+    cur.execute("SELECT component_id FROM components WHERE name = 'unknown'")
+    unk = cur.fetchone()
+    unknown_id = unk['component_id'] if unk else None
+
+    if action == "fraction":
+        raw = questionary.text(f"New fraction (0–1) [{fraction}]:").ask()
+        if raw is None or not raw.strip():
+            conn.close()
+            return
+        try:
+            new_frac = float(raw.strip())
+        except ValueError:
+            print("  Error: expected a number.")
+            conn.close()
+            return
+        if not (0.0 <= new_frac <= 1.0):
+            print("  Error: fraction must be between 0 and 1.")
+            conn.close()
+            return
+        cur.execute(
+            "UPDATE stream_composition SET fraction = ? WHERE composition_id = ?",
+            (new_frac, composition_id),
+        )
+        _recalculate_stream_carbon(stream_id, cur, unknown_id)
+        conn.commit()
+        print(f"  Fraction updated to {new_frac}.")
+
+    elif action == "swap":
+        # Exclude all components already in this stream (except the current one)
+        cur.execute(
+            "SELECT component_id FROM stream_composition WHERE stream_id = ? AND composition_id != ?",
+            (stream_id, composition_id),
+        )
+        exclude = [r['component_id'] for r in cur.fetchall()]
+        conn.close()
+
+        result = _pick_component(db_path, exclude_ids=exclude)
+        if result is None:
+            return
+        new_cid, new_name = result
+
+        conn = _connect(db_path)
+        cur  = conn.cursor()
+        cur.execute("SELECT component_id FROM components WHERE name = 'unknown'")
+        unk = cur.fetchone()
+        unknown_id = unk['component_id'] if unk else None
+
+        cur.execute(
+            "UPDATE stream_composition SET component_id = ? WHERE composition_id = ?",
+            (new_cid, composition_id),
+        )
+        _recalculate_stream_carbon(stream_id, cur, unknown_id)
+        conn.commit()
+        print(f"  Component swapped to {new_cid}  {new_name}.")
+
+    elif action == "remove":
+        confirmed = questionary.confirm(
+            f"Remove {component_id}  {comp_name} from stream?", default=False
+        ).ask()
+        if not confirmed:
+            conn.close()
+            return
+        cur.execute("DELETE FROM stream_composition WHERE composition_id = ?", (composition_id,))
+        _recalculate_stream_carbon(stream_id, cur, unknown_id)
+        conn.commit()
+        print(f"  Element {composition_id} removed.")
+        conn.close()
+        return
+
+    conn.close()
+
+
+def _add_composition_element(stream_id: str, db_path: str) -> None:
+    """Prompt the user to pick a component and fraction, then insert into stream_composition."""
+    conn = _connect(db_path)
+    cur  = conn.cursor()
+    cur.execute(
+        "SELECT component_id FROM stream_composition WHERE stream_id = ?", (stream_id,)
+    )
+    existing_ids = [r['component_id'] for r in cur.fetchall()]
+    conn.close()
+
+    result = _pick_component(db_path, exclude_ids=existing_ids)
+    if result is None:
+        return
+    new_cid, new_name = result
+
+    raw = questionary.text("Fraction (0–1):").ask()
+    if raw is None or not raw.strip():
+        print("  Cancelled.")
+        return
+    try:
+        new_frac = float(raw.strip())
+    except ValueError:
+        print("  Error: expected a number.")
+        return
+    if not (0.0 <= new_frac <= 1.0):
+        print("  Error: fraction must be between 0 and 1.")
+        return
+
+    is_trace = questionary.confirm("Mark as trace?", default=False).ask()
+    if is_trace is None:
+        return
+
+    conn = _connect(db_path)
+    cur  = conn.cursor()
+
+    new_id = _next_composition_id(cur)
+    cur.execute(
+        "INSERT INTO stream_composition (composition_id, stream_id, component_id, fraction, is_trace) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (new_id, stream_id, new_cid, new_frac, int(is_trace)),
+    )
+
+    cur.execute("SELECT component_id FROM components WHERE name = 'unknown'")
+    unk = cur.fetchone()
+    unknown_id = unk['component_id'] if unk else None
+
+    _recalculate_stream_carbon(stream_id, cur, unknown_id)
+    conn.commit()
+    conn.close()
+    print(f"  Added {new_id}  {new_cid}  {new_name}  fraction={new_frac}.")
+
+
+def _manage_stream_composition(stream_id: str, db_path: str) -> None:
+    """Edit the composition of a stream: add, remove, or modify elements."""
+    while True:
+        conn = _connect(db_path)
+        cur  = conn.cursor()
+        cur.execute("""
+            SELECT sc.composition_id, sc.component_id, c.name, sc.fraction, sc.is_trace,
+                   c.carbon_weight_pct, c.carbon_weight_pct_manual
+            FROM stream_composition sc
+            JOIN components c USING (component_id)
+            WHERE sc.stream_id = ?
+            ORDER BY sc.fraction DESC NULLS LAST
+        """, (stream_id,))
+        composition = cur.fetchall()
+        conn.close()
+
+        # Total fraction of non-trace elements
+        non_trace_fracs = [
+            r['fraction'] for r in composition
+            if not r['is_trace'] and r['fraction'] is not None
+        ]
+        total = sum(non_trace_fracs)
+        tol = 0.02
+        ok = abs(total - 1.0) <= tol if non_trace_fracs else False
+        total_indicator = f"{total:.4f} {'✓' if ok else '⚠  (not 1.0)'}"
+        print(f"\n  Stream {stream_id} — composition")
+        print(f"  Total non-trace fraction: {total_indicator}")
+
+        if composition:
+            id_w   = max(len("Comp ID"),     max(len(r['composition_id']) for r in composition))
+            cmp_w  = max(len("Comp"),        max(len(r['component_id'])   for r in composition))
+            name_w = min(36, max(len("Name"), max(len(r['name'])          for r in composition)))
+            print(f"\n  {'Comp ID':<{id_w}}  {'Comp':<{cmp_w}}  {'Name':<{name_w}}  {'fraction':>10}  trace  carbon_status")
+            print(f"  {'-'*id_w}  {'-'*cmp_w}  {'-'*name_w}  {'-'*10}  {'-'*5}  {'-'*20}")
+            for r in composition:
+                frac = f"{r['fraction']:.4f}" if r['fraction'] is not None else "    NULL"
+                trace_flag = "yes" if r['is_trace'] else "no "
+                status = "trace" if r['is_trace'] else _fmt_carbon_status(
+                    r['carbon_weight_pct'], r['carbon_weight_pct_manual']
+                )
+                print(
+                    f"  {r['composition_id']:<{id_w}}  {r['component_id']:<{cmp_w}}  "
+                    f"{r['name'][:name_w]:<{name_w}}  {frac:>10}  {trace_flag}    {status}"
+                )
+        print()
+
+        def _elem_label(r):
+            frac = f"{r['fraction']:.4f}" if r['fraction'] is not None else "NULL"
+            trace = "[trace] " if r['is_trace'] else ""
+            return f"{r['composition_id']}  {r['component_id']}  {r['name'][:30]}  {trace}{frac}"
+
+        element_choices = [
+            questionary.Choice(title=_elem_label(r), value=r['composition_id'])
+            for r in composition
+        ]
+
+        choices = (
+            element_choices
+            + [questionary.Separator()]
+            + [
+                questionary.Choice(title="+ Add element", value="__add__"),
+                questionary.Choice(title="← Back",        value="__back__"),
+            ]
+        )
+
+        nav = questionary.select(
+            f"Composition — stream {stream_id}", choices=choices
+        ).ask()
+
+        if nav is None or nav == "__back__":
+            return
+        if nav == "__add__":
+            _add_composition_element(stream_id, db_path)
+            continue
+
+        # Find the selected row
+        selected = next(r for r in composition if r['composition_id'] == nav)
+        _composition_element_actions(selected, stream_id, db_path)
+
+
+# ---------------------------------------------------------------------------
 
 def _stream_detail(stream_id: str, db_path: str) -> None:
     while True:
@@ -803,6 +1197,7 @@ def _stream_detail(stream_id: str, db_path: str) -> None:
         action = questionary.select(
             f"Stream {stream_id}",
             choices=[
+                questionary.Choice(title="Manage composition",   value="composition"),
                 questionary.Choice(title="Connect with flow",    value="connect"),
                 questionary.Choice(title="Manage related flows", value="manage_flows"),
                 questionary.Choice(title="Review components",    value="review"),
@@ -812,7 +1207,9 @@ def _stream_detail(stream_id: str, db_path: str) -> None:
 
         if action is None or action == "__back__":
             return
-        if action == "connect":
+        if action == "composition":
+            _manage_stream_composition(stream_id, db_path)
+        elif action == "connect":
             if _connect_stream_to_flow(stream_id, db_path):
                 return  # flow created — go back to stream list
         elif action == "manage_flows":

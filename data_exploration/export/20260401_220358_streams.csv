@@ -1,0 +1,29 @@
+company_id,company_name,stream_id,stream_name,stream_type,flow_kton_per_year,norm_flow_kton_per_year,carbon_pct_%,carbon_pct_complete
+C003,Olefins Production Plant,S019,Combustion air,raw_material,23311.12,35398.872,0.0,1
+C003,Olefins Production Plant,S017,Naphtha,raw_material,3000.0,4555.62,93.69,1
+C003,Olefins Production Plant,S018,Steam,raw_material,1500.0,2277.81,0.0,1
+C003,Olefins Production Plant,S028,HC Reformate import,raw_material,416.916,633.104,89.04,1
+C003,Olefins Production Plant,S027,Pygas import,raw_material,372.208,565.213,91.52,1
+C003,Olefins Production Plant,S021,Dilution water,raw_material,146.575,222.58,0.0,1
+C003,Olefins Production Plant,S020,NaOH,raw_material,17.538,26.632,0.0,1
+C003,Olefins Production Plant,S024,Make-up water,raw_material,1.499,2.276,0.0,1
+C003,Olefins Production Plant,S026,H2 gas,raw_material,1.143,1.736,0.0,1
+C003,Olefins Production Plant,S023,DMF solvent,raw_material,0.082,0.124,49.3,1
+C003,Olefins Production Plant,S022,NFM solvent,raw_material,0.031,0.048,52.16,1
+C003,Olefins Production Plant,S025,Make-up NMP,raw_material,0.026,0.04,60.58,1
+C003,Olefins Production Plant,S037,Flue gas,waste,23996.62,36439.831,2.12,1
+C003,Olefins Production Plant,S039,Dirty water (WS-DW),waste,1470.525,2233.051,0.13,1
+C003,Olefins Production Plant,S044,C7+ stream/Pygas tail,waste,294.449,447.133,87.71,1
+C003,Olefins Production Plant,S038,Effluent,waste,113.641,172.568,9.03,1
+C003,Olefins Production Plant,S040,Water,waste,91.846,139.472,0.0,1
+C003,Olefins Production Plant,S041,Propane rich fuel gas,waste,10.585,16.073,81.77,1
+C003,Olefins Production Plant,S042,Vinyl acetylene,waste,4.957,7.528,91.76,1
+C003,Olefins Production Plant,S043,Waste water,waste,1.125,1.709,0.29,1
+C003,Olefins Production Plant,S029,Ethylene,products,876.118,1330.42,85.64,1
+C003,Olefins Production Plant,S035,Benzene,products,672.519,1021.248,92.26,1
+C003,Olefins Production Plant,S030,Propylene,products,493.895,750.0,85.63,1
+C003,Olefins Production Plant,S036,Non aromatic stream,products,294.273,446.866,86.04,1
+C003,Olefins Production Plant,S034,C9+ stream,products,220.591,334.977,92.62,1
+C003,Olefins Production Plant,S033,Butadiene,products,116.321,176.638,88.7,1
+C003,Olefins Production Plant,S032,Butene mixture,products,92.55,140.542,85.55,1
+C003,Olefins Production Plant,S031,Acetylene,products,17.067,25.916,92.09,1

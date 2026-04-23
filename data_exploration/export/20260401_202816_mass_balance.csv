@@ -1,0 +1,7 @@
+company_id,company_name,total_in,total_out,gap,mass_closure_pct,carbon_in,carbon_out,carbon_gap,carbon_closure_pct
+C002,Natural Gas CHP,4996.3,4996.3,0.05,100.00%,64.8,65.0,-0.17,99.74%
+C003,Olefins Production Plant,28767.1,28767.1,0.06,100.00%,3522.6,3240.9,281.70,92.00%
+C004,Aromatics Production Plant,4753.9,4754.2,-0.28,99.99%,3990.8,3998.6,-7.78,99.81%
+C005,Biogas Plant,16820.0,16820.0,0.00,100.00%,1666.5,474.9,1191.63,28.50%
+C010,Methanol Production Plant,1186.2,1186.2,0.00,100.00%,72.2,94.4,-22.28,69.12%
+C013,DME Plant,93.7,93.8,-0.05,99.95%,35.1,35.1,-0.02,99.94%

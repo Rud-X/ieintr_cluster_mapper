@@ -284,6 +284,51 @@ CORRECTIONS: list = [
         molecular_weight=18.015,
     ),
 
+    Enrich(
+        name="Naphtha",
+        reason="Set via TUI carbon accounting tool",
+        carbon_atoms=10,
+        molecular_weight=128.2,
+    ),
+
+    Enrich(
+        name="Pyridine/Pyrrole",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=79.102,
+        carbon_atoms=5,
+    ),
+
+    Merge("BDI", "1,3-Butadiene",
+          "BDI refers to 1.3 Butadiene"),
+
+    Enrich(
+        name="butene",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=56.0,
+        carbon_atoms=4,
+    ),
+
+    Enrich(
+        name="Sodium sulfide",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=78.0452,
+    ),
+
+    Enrich(
+        name="Sodium formate",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=68.007,
+    ),
+
+    Enrich(
+        name="Sodium hydroxide",
+        reason="Set via TUI carbon accounting tool",
+        molecular_weight=39.9971,
+    ),
+
+    Merge("METFORM", "Methyl formate",
+          "Assuming METFORM is METhanol FORMate"),
+
 ]
 
 

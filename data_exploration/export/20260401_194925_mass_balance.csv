@@ -1,0 +1,12 @@
+company_id,company_name,reference_stream_id,reference_stream_name,normalize_setpoint,scaling_factor,total_in,total_out,gap,carbon_in,carbon_out,carbon_gap,mass_closure_pct,carbon_closure_pct
+C002,Natural Gas CHP,,,1.0,0.87504332,4996.348,4996.295,0.053,64.824,64.992,-0.168,100.0,99.74
+C003,Olefins Production Plant,S030,Propylene,750.0,1.5185401605279174,28767.139,28767.083,0.056,3522.602,3240.901,281.701,100.0,92.0
+C004,Aromatics Production Plant,S045,FS-REFM,493.0,0.2641661566330841,4753.897,4754.177,-0.28,3990.826,3998.606,-7.78,99.99,99.81
+C005,Biogas Plant,S074,Food waste,60.0,0.01818181818181818,16820.0,16820.0,0.0,1666.5,474.873,1191.627,100.0,28.5
+C010,Methanol Production Plant,S131,PS-CH3OH,300.0,3.2011344069138565,1186.216,1186.216,0.0,72.162,94.443,-22.281,100.0,69.12
+C013,DME Plant,S156,PS-DME,140.0,2.0802377414561666,93.717,93.765,-0.048,35.126,35.147,-0.021,99.95,99.94
+C016,Generic Import,,,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,,
+C017,Generic Export,,,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,,
+C018,Generic WMF,,,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,,
+C019,Generic Water WMF,,,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,,
+C020,Generic Emission to Air,,,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,,

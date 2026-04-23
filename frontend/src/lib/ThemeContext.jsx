@@ -16,7 +16,7 @@ export const DARK_COLORS = {
 }
 
 export const LIGHT_COLORS = {
-  bg: '#f8f9fa',
+  bg: '#ffffff',
   card: '#ffffff',
   hover: '#f0f2f5',
   border: '#d1d5db',
