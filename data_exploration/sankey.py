@@ -96,11 +96,13 @@ def fetch_company_names(conn, company_ids):
 def load_data(conn, company_ids):
     """
     Returns:
-      streams    : {stream_id: {stream_id, company_id, stream_name, stream_type, direction, flow_kton}}
-      flows_by_from : {from_stream_id: [flow_dict, ...]}
-      flows_by_to   : {to_stream_id:   [flow_dict, ...]}
-      composition   : {stream_id: [{component_id, name, fraction}, ...]}
-                      includes CM227 ("unknown") rows
+      streams            : {stream_id: {stream_id, company_id, stream_name, stream_type, direction, flow_kton}}
+      flows_by_from      : {from_stream_id: [flow_dict, ...]}
+      flows_by_to        : {to_stream_id:   [flow_dict, ...]}
+      sender_stream_flows: {stream_id: flow_kton}  — from_stream flowrates for internal flows
+      receiver_stream_flows: {stream_id: flow_kton} — to_stream flowrates for internal flows
+      company_node_types : {company_id: node_type}  — for all companies seen in flows
+      composition        : {stream_id: [{component_id, name, fraction}, ...]}
     """
     ph = _placeholders(company_ids)
 
@@ -145,6 +147,53 @@ def load_data(conn, company_ids):
             if row[3]:
                 flows_by_to[row[3]].append(flow)
 
+    # --- node_type for every company seen in flows ---
+    all_flow_company_ids = set()
+    for fl in list(flows_by_from.values()) + list(flows_by_to.values()):
+        for f in fl:
+            all_flow_company_ids.add(f["from_company_id"])
+            all_flow_company_ids.add(f["to_company_id"])
+    company_node_types = {}
+    if all_flow_company_ids:
+        nt_ph = _placeholders(list(all_flow_company_ids))
+        for row in conn.execute(
+            f"SELECT company_id, node_type FROM companies WHERE company_id IN ({nt_ph}) AND included=1",
+            list(all_flow_company_ids),
+        ):
+            company_node_types[row[0]] = row[1]
+
+    # --- sender and receiver stream flowrates for internal flows ---
+    # Sender streams may belong to companies outside the selected set.
+    # Receiver streams are always in our selected set, but fetching them here
+    # keeps the sizing logic self-contained.
+    sender_stream_flows = {}   # {from_stream_id: flow_kton_per_year}
+    receiver_stream_flows = {} # {to_stream_id:   flow_kton_per_year}
+
+    internal_from_ids = [
+        f["from_stream_id"]
+        for fl in flows_by_to.values()
+        for f in fl
+        if f["flow_type"] == "internal" and f["from_stream_id"]
+    ]
+    internal_to_ids = [
+        f["to_stream_id"]
+        for fl in flows_by_from.values()
+        for f in fl
+        if f["flow_type"] == "internal" and f["to_stream_id"]
+    ]
+
+    all_extra_ids = list(set(internal_from_ids + internal_to_ids))
+    if all_extra_ids:
+        ex_ph = _placeholders(all_extra_ids)
+        for row in conn.execute(
+            f"SELECT stream_id, flow_kton_per_year FROM streams WHERE stream_id IN ({ex_ph})",
+            all_extra_ids,
+        ):
+            if row[0] in internal_from_ids:
+                sender_stream_flows[row[0]] = row[1]
+            if row[0] in internal_to_ids:
+                receiver_stream_flows[row[0]] = row[1]
+
     # --- composition (all non-trace components, including CM227) ---
     composition = defaultdict(list)
     if stream_ids:
@@ -162,7 +211,7 @@ def load_data(conn, company_ids):
                 "component_id": row[1], "name": row[2], "fraction": row[3],
             })
 
-    return streams, flows_by_from, flows_by_to, composition
+    return streams, flows_by_from, flows_by_to, sender_stream_flows, receiver_stream_flows, company_node_types, composition
 
 
 # --------------------------------------------------------------------------- #
@@ -182,21 +231,33 @@ def _make_link(src_col, src_label, tgt_col, tgt_label, stream, flow_kton=None, p
 
 
 def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by_to,
+                    sender_stream_flows, receiver_stream_flows, company_node_types,
                     show_products_wastes, conn):
     """
     Produce a flat list of raw links. Each link carries:
       src_col/tgt_col  : 'left' | 'center' | 'center_right' | 'right'
       src_label/tgt_label : display name of the node
       stream_id, stream_name, stream_type, flow_kton, passthrough
+
+    Flow sizing rule for internal flows:
+      flow_size = min(sender_output_kton, receiver_input_kton)
+
+      Receiver side:  flow_size from the sender node; any deficit from Import.
+      Sender side:    flow_size to the receiver node; any surplus to Export.
+
+    Named nodes for IMP/EXP/WMF:
+      import_source  → named left node  (instead of generic "Import")
+      export_sink    → named right node (instead of generic "Export")
+      waste_facility → named right node (instead of generic "Export")
     """
-    # Resolve names for companies not in our selection (needed for internal flow nodes)
+    # Resolve names for all non-center companies that appear in any flow
     external_ids = set()
-    for sid, s in streams.items():
+    for sid in streams:
         for f in flows_by_to.get(sid, []):
-            if f["flow_type"] == "internal" and f["from_company_id"] not in company_names:
+            if f["from_company_id"] not in company_names:
                 external_ids.add(f["from_company_id"])
         for f in flows_by_from.get(sid, []):
-            if f["flow_type"] == "internal" and f["to_company_id"] not in company_names:
+            if f["to_company_id"] not in company_names:
                 external_ids.add(f["to_company_id"])
     all_names = dict(company_names)
     if external_ids:
@@ -208,17 +269,34 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
         cname = company_names[s["company_id"]]
 
         if s["direction"] == "input":
-            if sid not in flows_by_to:
-                # No flow → comes from Import
+            flow_list = flows_by_to.get(sid, [])
+            if not flow_list:
+                # No flow at all → entire input comes from Import
                 links.append(_make_link("left", "Import", "center", cname, s))
             else:
-                for f in flows_by_to[sid]:
+                total_covered = 0.0
+                for f in flow_list:
                     if f["flow_type"] == "internal":
+                        sender_kton = sender_stream_flows.get(f["from_stream_id"], f["flow_kton"])
+                        # Flow is capped at the smaller of the two connected streams
+                        flow_size = min(sender_kton, s["flow_kton"])
                         from_name = all_names.get(f["from_company_id"], f["from_company_id"])
-                        links.append(_make_link("left", from_name, "center", cname, s, f["flow_kton"]))
+                        links.append(_make_link("left", from_name, "center", cname, s, flow_size))
+                        total_covered += flow_size
                     else:
-                        # import-type flow recorded in flows table
-                        links.append(_make_link("left", "Import", "center", cname, s, f["flow_kton"]))
+                        # Non-internal input flow: use named node for import_source, else "Import"
+                        ntype = company_node_types.get(f["from_company_id"], "company")
+                        src_label = (
+                            all_names.get(f["from_company_id"], "Import")
+                            if ntype == "import_source" else "Import"
+                        )
+                        links.append(_make_link("left", src_label, "center", cname, s, f["flow_kton"]))
+                        total_covered += f["flow_kton"]
+
+                # Remaining input not covered by any sender/import flow → comes from Import
+                remainder = s["flow_kton"] - total_covered
+                if remainder > 1e-6:
+                    links.append(_make_link("left", "Import", "center", cname, s, remainder))
 
         else:  # output
             flow_list = flows_by_from.get(sid, [])
@@ -227,6 +305,9 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                 """Destination label on the right side for a given flow."""
                 if f["flow_type"] == "internal":
                     return all_names.get(f["to_company_id"], f["to_company_id"])
+                ntype = company_node_types.get(f["to_company_id"], "company")
+                if ntype in ("export_sink", "waste_facility"):
+                    return all_names.get(f["to_company_id"], "Export")
                 return "Export"
 
             if not flow_list:
@@ -238,20 +319,38 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                 else:
                     links.append(_make_link("center", cname, "right", "Export", s))
             else:
+                total_sent = 0.0
                 for f in flow_list:
                     rlabel = _right_label(f)
+                    if f["flow_type"] == "internal":
+                        receiver_kton = receiver_stream_flows.get(f["to_stream_id"], s["flow_kton"])
+                        # Flow is capped at the smaller of the two connected streams
+                        kton = min(s["flow_kton"], receiver_kton)
+                    else:
+                        kton = s["flow_kton"]
+                    total_sent += kton
                     if show_products_wastes:
                         sub = _sub_label(cname, s["stream_type"])
-                        links.append(_make_link("center", cname, "center_right", sub, s, f["flow_kton"]))
-                        links.append(_make_link("center_right", sub, "right", rlabel, s, f["flow_kton"], passthrough=True))
+                        links.append(_make_link("center", cname, "center_right", sub, s, kton))
+                        links.append(_make_link("center_right", sub, "right", rlabel, s, kton, passthrough=True))
                     else:
-                        links.append(_make_link("center", cname, "right", rlabel, s, f["flow_kton"]))
+                        links.append(_make_link("center", cname, "right", rlabel, s, kton))
+
+                # Any sender output not absorbed by receivers → goes to Export
+                surplus = s["flow_kton"] - total_sent
+                if surplus > 1e-6:
+                    if show_products_wastes:
+                        sub = _sub_label(cname, s["stream_type"])
+                        links.append(_make_link("center", cname, "center_right", sub, s, surplus))
+                        links.append(_make_link("center_right", sub, "right", "Export", s, surplus, passthrough=True))
+                    else:
+                        links.append(_make_link("center", cname, "right", "Export", s, surplus))
 
     return links
 
 
 def _sub_label(company_name, stream_type):
-    suffix = "Products" if stream_type == "product" else "Wastes"
+    suffix = "Products" if stream_type == "products" else "Wastes"
     return f"{company_name} | {suffix}"
 
 
@@ -379,7 +478,7 @@ def _rgba(hex_color, alpha=0.6):
 COL_X = {"left": 0.01, "center": 0.4, "center_right": 0.65, "right": 0.99}
 
 
-def build_sankey_data(expanded_links, colors):
+def build_sankey_data(expanded_links, colors, center_company_names):
     """
     Build node labels/positions and link arrays for go.Sankey.
 
@@ -424,23 +523,40 @@ def build_sankey_data(expanded_links, colors):
     for i, (col, _) in enumerate(node_keys):
         col_nodes[col].append(i)
 
-    node_x, node_y, node_labels = [], [], []
+    node_x, node_y, node_labels, node_colors = [], [], [], []
     for i, (col, label) in enumerate(node_keys):
         node_x.append(COL_X.get(col, 0.5))
         col_list = col_nodes[col]
         pos = col_list.index(i)
         n = len(col_list)
         node_y.append(0.05 if n == 1 else 0.05 + 0.9 * pos / (n - 1))
-        node_labels.append(label)
+        # center_right nodes: display only "Products" or "Wastes", not the company prefix
+        if col == "center_right" and " | " in label:
+            node_labels.append(label.split(" | ", 1)[1])
+        else:
+            node_labels.append(label)
+        node_colors.append(_node_color(col, label, center_company_names))
 
-    return node_labels, node_x, node_y, sources, targets, values, link_colors, link_labels
+    return node_labels, node_x, node_y, node_colors, sources, targets, values, link_colors, link_labels
+
+
+def _node_color(col, label, center_names):
+    if col == "center":
+        return "rgba(173,216,230,0.8)"   # light blue — company nodes
+    if col == "center_right":
+        if label.endswith("| Products"):
+            return "rgba(148,103,189,0.8)"  # purple — product sub-nodes
+        return "rgba(100,100,100,0.8)"       # dark grey — waste sub-nodes
+    if col in ("left", "right") and label in center_names:
+        return "rgba(173,216,230,0.8)"   # light blue — regular company sidebar nodes only
+    return "rgba(120,120,120,0.3)"           # default grey — Import/Export/IMP/EXP/WMF nodes
 
 
 # --------------------------------------------------------------------------- #
 # Rendering
 # --------------------------------------------------------------------------- #
 
-def render(node_labels, node_x, node_y, sources, targets, values,
+def render(node_labels, node_x, node_y, node_colors, sources, targets, values,
            link_colors, link_labels, key_to_label, colors, output=None):
     """Create and display (or save) the Sankey figure."""
 
@@ -465,7 +581,7 @@ def render(node_labels, node_x, node_y, sources, targets, values,
             hovertemplate="%{customdata}<extra></extra>",
             x=node_x,
             y=node_y,
-            color="rgba(120,120,120,0.3)",
+            color=node_colors,
         ),
         link=dict(
             source=sources,
@@ -543,14 +659,45 @@ def main():
         print(f"Warning: unknown company IDs: {', '.join(unknown_ids)}")
         company_ids = [cid for cid in company_ids if cid in company_names]
 
+    # Promote waste_facility companies that have output streams to center companies
+    if company_ids:
+        ph = _placeholders(company_ids)
+        wmf_center = [
+            row[0] for row in conn.execute(
+                f"""
+                SELECT DISTINCT c.company_id
+                FROM flows f
+                JOIN streams s ON s.stream_id = f.from_stream_id
+                JOIN companies c ON c.company_id = f.to_company_id
+                WHERE s.company_id IN ({ph})
+                  AND c.node_type = 'waste_facility' AND c.included = 1
+                  AND EXISTS (
+                      SELECT 1 FROM streams s2
+                      WHERE s2.company_id = c.company_id AND s2.direction = 'output'
+                  )
+                """,
+                company_ids,
+            )
+        ]
+        for cid in wmf_center:
+            if cid not in company_ids:
+                company_ids.append(cid)
+        if wmf_center:
+            company_names = fetch_company_names(conn, company_ids)
+
+    # Names of center companies — used to colour sidebar nodes correctly
+    center_company_names = set(company_names.values())
+
     print(f"Companies: {', '.join(company_names[cid] for cid in company_ids)}")
 
-    streams, flows_by_from, flows_by_to, composition = load_data(conn, company_ids)
+    streams, flows_by_from, flows_by_to, sender_stream_flows, receiver_stream_flows, \
+        company_node_types, composition = load_data(conn, company_ids)
     print(f"Streams loaded: {len(streams)}  |  Flows loaded: {sum(len(v) for v in flows_by_from.values())}")
 
     raw_links = build_raw_links(
         company_ids, company_names, streams,
         flows_by_from, flows_by_to,
+        sender_stream_flows, receiver_stream_flows, company_node_types,
         args.show_products_wastes, conn,
     )
 
@@ -563,8 +710,8 @@ def main():
 
     colors = assign_colors(ordered_keys)
 
-    node_labels, node_x, node_y, sources, targets, values, link_colors, link_labels = \
-        build_sankey_data(expanded, colors)
+    node_labels, node_x, node_y, node_colors, sources, targets, values, link_colors, link_labels = \
+        build_sankey_data(expanded, colors, center_company_names)
 
     if not sources:
         print("No links to display.")
@@ -572,7 +719,7 @@ def main():
         return
 
     render(
-        node_labels, node_x, node_y,
+        node_labels, node_x, node_y, node_colors,
         sources, targets, values, link_colors, link_labels,
         key_to_label, colors,
         args.output,
