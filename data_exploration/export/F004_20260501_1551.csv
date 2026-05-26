@@ -1,0 +1,17 @@
+flow_id,from_company,from_stream,to_company,to_stream,status,measure,stream_a,stream_b,difference,rel_diff
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Total flow (kton/yr),447.1326317272848,100.79492146136548,346.3377102659193,+77.5%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Toluene,0.5158,0.40299999999999997,0.11280000000000007,+21.9%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,2-Methylhexane,0.14150000000000001,0.109,0.032500000000000015,+23.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,3-Methylheptane,0.14150000000000001,0.109,0.032500000000000015,+23.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,o-Xylene,0.0708,0.055,0.0158,+22.3%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Ethylbenzene,0.0601,0.066,-0.0059000000000000025,-9.8%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,p-Xylene,0.0262,0.0,0.0262,+100.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Cumene,0.014199999999999999,0.012,0.002199999999999999,+15.5%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Water,0.0141,0.02,-0.005900000000000001,-41.8%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Styrene,0.011699999999999999,0.106,-0.0943,-806.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Benzene,0.003,0.002,0.001,+33.3%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Sodium sulfide,0.0004,0.0,0.0004,+100.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Cyclohexane,0.0004,0.0,0.0004,+100.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Sodium formate,0.0003,0.0,0.0003,+100.0%
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,m-Xylene,0.0,0.085,-0.085,—
+F004,Olefins Production Plant,C7+ stream/Pygas tail,Aromatics Production Plant,FS-C7+,candidate,Naphtha,0.0,0.033,-0.033,—

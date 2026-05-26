@@ -32,6 +32,20 @@ Functions:
                                          — update inflow side of an existing flow
   delete_flow(flow_id, db_path)          — delete a flow by ID
   toggle_company_included(company_id, db_path) — flip included 0↔1, return new value
+
+WMF outstream management:
+  next_stream_id(db_path)                — next available S-prefixed stream ID
+  next_composition_id(db_path)           — next available CP-prefixed composition ID
+  get_wmf_inflow_component_totals(wmf_id, db_path)
+                                         — {component_id: {name, kton}} aggregated from inflows
+  get_wmf_outstreams(wmf_id, db_path)    — output streams owned by this WMF with composition
+  create_wmf_pure_outstream(wmf_id, component_id, component_name, initial_kton, db_path)
+                                         — create a 100% single-component output stream
+  create_wmf_waste_bundle(wmf_id, waste_components_kton, db_path)
+                                         — create the catch-all waste bundle output stream
+  refresh_wmf_outstreams(wmf_id, db_path)— recalculate all outstream quantities from inflows
+  delete_wmf_outstream(stream_id, db_path)— delete outstream + its flows
+  disable_wmf_outstreams(wmf_id, db_path)— delete all WMF outstreams + their flows
 """
 
 import re
@@ -381,6 +395,38 @@ def next_flow_id(db_path: str = DB_PATH) -> str:
     return f"F{n + 1:03d}"
 
 
+def _next_stream_id_cur(cur) -> str:
+    """Generate next S-prefixed stream ID using an existing cursor (sees uncommitted inserts)."""
+    cur.execute("SELECT stream_id FROM streams ORDER BY stream_id")
+    ids = [r["stream_id"] for r in cur.fetchall()]
+    numeric = [int(m.group(1)) for s in ids if (m := re.fullmatch(r"S(\d+)", s))]
+    return f"S{max(numeric, default=0) + 1:03d}"
+
+
+def _next_composition_id_cur(cur) -> str:
+    """Generate next CP-prefixed composition ID using an existing cursor."""
+    cur.execute("SELECT composition_id FROM stream_composition ORDER BY composition_id")
+    ids = [r["composition_id"] for r in cur.fetchall()]
+    numeric = [int(m.group(1)) for c in ids if (m := re.fullmatch(r"CP(\d+)", c))]
+    return f"CP{max(numeric, default=0) + 1:03d}"
+
+
+def next_stream_id(db_path: str = DB_PATH) -> str:
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    result = _next_stream_id_cur(cur)
+    conn.close()
+    return result
+
+
+def next_composition_id(db_path: str = DB_PATH) -> str:
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    result = _next_composition_id_cur(cur)
+    conn.close()
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Mutations
 # ---------------------------------------------------------------------------
@@ -644,6 +690,86 @@ def update_company_details(
     conn.close()
 
 
+def get_wmf_inflow_component_totals(wmf_id: str, db_path: str = DB_PATH) -> dict:
+    """Return aggregated kton/yr per non-trace component from all waste_to_wmf inflows.
+
+    Returns {component_id: {"name": str, "kton": float}}.
+
+    Mass balance is preserved: any fraction of an inflow stream not accounted for by
+    stream_composition rows (including streams with no composition data) is attributed
+    to CM227 ("unknown"), the reserved remainder component.
+    """
+    conn = _connect(db_path)
+    cur = conn.cursor()
+
+    # Get all inflow streams with their effective quantity
+    cur.execute("""
+        SELECT f.from_stream_id,
+               COALESCE(f.flow_kton_per_year, fs.flow_kton_per_year) AS effective_kton
+        FROM flows f
+        JOIN streams fs ON fs.stream_id = f.from_stream_id
+        WHERE f.to_company_id = ?
+          AND f.flow_type = 'waste_to_wmf'
+    """, (wmf_id,))
+    inflows = [(r["from_stream_id"], r["effective_kton"]) for r in cur.fetchall()]
+
+    totals = {}  # {component_id: {"name": str, "kton": float}}
+
+    for stream_id, effective_kton in inflows:
+        if not effective_kton:
+            continue
+
+        cur.execute("""
+            SELECT sc.component_id, co.name, sc.fraction
+            FROM stream_composition sc
+            JOIN components co ON co.component_id = sc.component_id
+            WHERE sc.stream_id = ? AND sc.is_trace = 0
+        """, (stream_id,))
+        comps = cur.fetchall()
+
+        frac_sum = sum(c["fraction"] for c in comps if c["fraction"])
+
+        for c in comps:
+            if c["fraction"]:
+                cid = c["component_id"]
+                if cid not in totals:
+                    totals[cid] = {"name": c["name"], "kton": 0.0}
+                totals[cid]["kton"] += effective_kton * c["fraction"]
+
+        # Route unaccounted fraction (including streams with no composition) to CM227
+        unaccounted = max(0.0, 1.0 - frac_sum)
+        if unaccounted > 1e-9:
+            if "CM227" not in totals:
+                totals["CM227"] = {"name": "unknown", "kton": 0.0}
+            totals["CM227"]["kton"] += effective_kton * unaccounted
+
+    conn.close()
+    return totals
+
+
+def get_wmf_outstreams(wmf_id: str, db_path: str = DB_PATH) -> list:
+    """Return all output streams owned by this WMF with their composition rows.
+
+    Each result row has: stream_id, stream_name, stream_type, flow_kton_per_year,
+    component_id (nullable), component_name (nullable), fraction (nullable).
+    A stream with no composition appears once with NULLs on the component fields.
+    """
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.stream_id, s.stream_name, s.stream_type, s.flow_kton_per_year,
+               sc.component_id, co.name AS component_name, sc.fraction
+        FROM streams s
+        LEFT JOIN stream_composition sc ON sc.stream_id = s.stream_id
+        LEFT JOIN components co ON co.component_id = sc.component_id
+        WHERE s.company_id = ? AND s.direction = 'output'
+        ORDER BY s.stream_type ASC, s.stream_id
+    """, (wmf_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
 def get_all_streams(db_path: str = DB_PATH) -> list:
     """Return all streams joined with company name, ordered by company then stream_id."""
     conn = _connect(db_path)
@@ -730,6 +856,166 @@ def set_normalize_setpoint(company_id: str, setpoint: float, db_path: str = DB_P
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# WMF outstream management
+# ---------------------------------------------------------------------------
+
+def create_wmf_pure_outstream(
+    wmf_id: str,
+    component_id: str,
+    component_name: str,
+    initial_kton: float,
+    db_path: str = DB_PATH,
+) -> str:
+    """Create a pure single-component output stream for a WMF. Returns the new stream_id."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    sid = _next_stream_id_cur(cur)
+    cur.execute(
+        """INSERT INTO streams
+           (stream_id, company_id, stream_name, stream_type, direction, flow_kton_per_year)
+           VALUES (?, ?, ?, 'product', 'output', ?)""",
+        (sid, wmf_id, f"{component_name} outstream", initial_kton),
+    )
+    cpid = _next_composition_id_cur(cur)
+    cur.execute(
+        """INSERT INTO stream_composition
+           (composition_id, stream_id, component_id, fraction, is_trace)
+           VALUES (?, ?, ?, 1.0, 0)""",
+        (cpid, sid, component_id),
+    )
+    conn.commit()
+    conn.close()
+    return sid
+
+
+def create_wmf_waste_bundle(
+    wmf_id: str,
+    waste_components_kton: dict,
+    db_path: str = DB_PATH,
+) -> str:
+    """Create the waste bundle output stream for a WMF. Returns the new stream_id.
+
+    waste_components_kton: {component_id: kton} for all components going into the bundle.
+    """
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    sid = _next_stream_id_cur(cur)
+    total = sum(waste_components_kton.values())
+    cur.execute(
+        """INSERT INTO streams
+           (stream_id, company_id, stream_name, stream_type, direction, flow_kton_per_year)
+           VALUES (?, ?, 'Waste Bundle', 'waste', 'output', ?)""",
+        (sid, wmf_id, total if total > 0 else 0.0),
+    )
+    if total > 0:
+        for cid, kton in waste_components_kton.items():
+            cpid = _next_composition_id_cur(cur)
+            cur.execute(
+                """INSERT INTO stream_composition
+                   (composition_id, stream_id, component_id, fraction, is_trace)
+                   VALUES (?, ?, ?, ?, 0)""",
+                (cpid, sid, cid, kton / total),
+            )
+    conn.commit()
+    conn.close()
+    return sid
+
+
+def refresh_wmf_outstreams(wmf_id: str, db_path: str = DB_PATH) -> None:
+    """Recalculate all WMF outstream quantities from current inflows.
+
+    Pure outstreams (stream_type='product'): flow_kton_per_year = inflow total for that
+    component, or 0 if the component is no longer present in any inflow.
+
+    Waste bundle (stream_type='waste'): flow_kton_per_year = sum of all inflow component
+    totals NOT covered by a pure outstream. Composition is rebuilt from scratch.
+    """
+    totals = get_wmf_inflow_component_totals(wmf_id, db_path)
+
+    conn = _connect(db_path)
+    cur = conn.cursor()
+
+    # Update pure outstreams
+    cur.execute("""
+        SELECT s.stream_id, sc.component_id
+        FROM streams s
+        JOIN stream_composition sc ON sc.stream_id = s.stream_id
+        WHERE s.company_id = ? AND s.stream_type = 'product'
+    """, (wmf_id,))
+    pure_rows = cur.fetchall()
+
+    pure_cids = set()
+    for row in pure_rows:
+        cid = row["component_id"]
+        pure_cids.add(cid)
+        kton = totals[cid]["kton"] if cid in totals else 0.0
+        cur.execute(
+            "UPDATE streams SET flow_kton_per_year = ? WHERE stream_id = ?",
+            (kton, row["stream_id"]),
+        )
+
+    # Update waste bundle
+    cur.execute(
+        "SELECT stream_id FROM streams WHERE company_id = ? AND stream_type = 'waste'",
+        (wmf_id,),
+    )
+    wb_row = cur.fetchone()
+    if wb_row:
+        wb_sid = wb_row["stream_id"]
+        waste_kton = {
+            cid: info["kton"]
+            for cid, info in totals.items()
+            if cid not in pure_cids
+        }
+        waste_total = sum(waste_kton.values())
+        cur.execute(
+            "UPDATE streams SET flow_kton_per_year = ? WHERE stream_id = ?",
+            (waste_total, wb_sid),
+        )
+        cur.execute("DELETE FROM stream_composition WHERE stream_id = ?", (wb_sid,))
+        if waste_total > 0:
+            for cid, kton in waste_kton.items():
+                cpid = _next_composition_id_cur(cur)
+                cur.execute(
+                    """INSERT INTO stream_composition
+                       (composition_id, stream_id, component_id, fraction, is_trace)
+                       VALUES (?, ?, ?, ?, 0)""",
+                    (cpid, wb_sid, cid, kton / waste_total),
+                )
+
+    conn.commit()
+    conn.close()
+
+
+def delete_wmf_outstream(stream_id: str, db_path: str = DB_PATH) -> None:
+    """Delete a WMF outstream and any flows referencing it."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM flows WHERE from_stream_id = ? OR to_stream_id = ?",
+        (stream_id, stream_id),
+    )
+    cur.execute("DELETE FROM stream_composition WHERE stream_id = ?", (stream_id,))
+    cur.execute("DELETE FROM streams WHERE stream_id = ?", (stream_id,))
+    conn.commit()
+    conn.close()
+
+
+def disable_wmf_outstreams(wmf_id: str, db_path: str = DB_PATH) -> None:
+    """Delete all output streams for a WMF, plus any flows referencing them."""
+    conn = _connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT stream_id FROM streams WHERE company_id = ? AND direction = 'output'",
+        (wmf_id,),
+    )
+    stream_ids = [r["stream_id"] for r in cur.fetchall()]
+    conn.close()
+    for sid in stream_ids:
+        delete_wmf_outstream(sid, db_path)
 
 
 def toggle_company_included(company_id: str, db_path: str = DB_PATH) -> int:

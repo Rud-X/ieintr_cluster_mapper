@@ -240,6 +240,8 @@ def _company_submenu(company_id: str, db_path: str) -> None:
     if is_external:
         choices = ["Explore", "Create Flow", "Manage Flows", "Toggle Included",
                    "Delete...", "← Back"]
+        if node_type == "waste_facility":
+            choices.insert(1, "Manage Outstreams")
     else:
         choices = ["Explore", "Normalization", "Create Flow",
                    "Manage Flows", "Toggle Included", "Delete...", "← Back"]
@@ -255,6 +257,8 @@ def _company_submenu(company_id: str, db_path: str) -> None:
             return
         if choice == "Explore":
             _explore_company(company_id, db_path)
+        elif choice == "Manage Outstreams":
+            _manage_wmf_outstreams(company_id, db_path)
         elif choice == "Normalization":
             _normalization_menu(company_id, db_path)
         elif choice == "Create Flow":
@@ -666,6 +670,196 @@ def _pick_target_for_flow(source_stream, source_company_id: str, db_path: str) -
             print(f"\n  {exc}\n")
     else:
         print("  (cancelled)")
+
+
+# ---------------------------------------------------------------------------
+# WMF outstreams management
+# ---------------------------------------------------------------------------
+
+def _manage_wmf_outstreams(company_id: str, db_path: str) -> None:
+    """Submenu for managing outstreams on a WMF node."""
+    while True:
+        company = manage_companies.get_company(company_id, db_path)
+        included_str = "included" if company["included"] else "excluded"
+        label = f"[WMF] {company_id}  {company['name']}  [{included_str}]  — Outstreams"
+
+        rows = manage_companies.get_wmf_outstreams(company_id, db_path)
+
+        # Group rows by stream_id
+        streams_map = {}
+        for row in rows:
+            sid = row["stream_id"]
+            if sid not in streams_map:
+                streams_map[sid] = {
+                    "stream_id":        sid,
+                    "stream_name":      row["stream_name"],
+                    "stream_type":      row["stream_type"],
+                    "flow_kton_per_year": row["flow_kton_per_year"],
+                    "components":       [],
+                }
+            if row["component_id"]:
+                streams_map[sid]["components"].append({
+                    "component_id":   row["component_id"],
+                    "component_name": row["component_name"],
+                    "fraction":       row["fraction"],
+                })
+
+        pure_streams = sorted(
+            [s for s in streams_map.values() if s["stream_type"] == "product"],
+            key=lambda x: x["stream_id"],
+        )
+        waste_bundle = next(
+            (s for s in streams_map.values() if s["stream_type"] == "waste"), None
+        )
+
+        print()
+        choices = []
+
+        if not streams_map:
+            print("  No outstreams configured.")
+            print("  Enabling will create a Waste Bundle aggregating all connected inflow components.")
+            print()
+            choices = ["Enable Outstreams", "← Back"]
+        else:
+            if pure_streams:
+                print("  Pure outstreams:")
+                for s in pure_streams:
+                    kton_str  = f"{s['flow_kton_per_year']:.3f}" if s["flow_kton_per_year"] is not None else "n/a"
+                    comp_name = s["components"][0]["component_name"] if s["components"] else "?"
+                    print(f"    {s['stream_id']}  {s['stream_name']:<32}  {kton_str:>10} kton/yr  [{comp_name}]")
+            else:
+                print("  Pure outstreams: (none — all inflow components go to Waste Bundle)")
+
+            print()
+
+            if waste_bundle:
+                kton_str = f"{waste_bundle['flow_kton_per_year']:.3f}" if waste_bundle["flow_kton_per_year"] is not None else "n/a"
+                comps_sorted = sorted(
+                    waste_bundle["components"],
+                    key=lambda c: -(c["fraction"] or 0),
+                )
+                if comps_sorted:
+                    comp_summary = "  |  ".join(
+                        f"{c['component_name']} {c['fraction']:.0%}"
+                        for c in comps_sorted[:4]
+                    )
+                    if len(comps_sorted) > 4:
+                        comp_summary += f"  |  +{len(comps_sorted) - 4} more"
+                else:
+                    comp_summary = "empty — all components extracted to pure outstreams"
+                print(f"  Waste Bundle ({waste_bundle['stream_id']})  {kton_str:>10} kton/yr")
+                print(f"    [{comp_summary}]")
+            else:
+                print("  Waste Bundle: (none)")
+
+            print()
+
+            choices.append("+ Add Pure Component Outstream")
+            choices.append("♻ Refresh Quantities")
+            for s in pure_streams:
+                choices.append(questionary.Choice(
+                    title=f"✕ Delete: {s['stream_name']} ({s['stream_id']})",
+                    value={"action": "delete", "stream_id": s["stream_id"],
+                           "stream_name": s["stream_name"]},
+                ))
+            choices.append("Disable All Outstreams")
+            choices.append("← Back")
+
+        choice = questionary.select(label, choices=choices).ask()
+        if choice is None or choice == "← Back":
+            return
+
+        if choice == "Enable Outstreams":
+            totals = manage_companies.get_wmf_inflow_component_totals(company_id, db_path)
+            if not totals:
+                print("  No inflow components found — connect waste_to_wmf flows first.")
+                print()
+            else:
+                waste_kton = {cid: info["kton"] for cid, info in totals.items()}
+                manage_companies.create_wmf_waste_bundle(company_id, waste_kton, db_path)
+                print("  Waste Bundle created.")
+                print("  Use '+ Add Pure Component Outstream' to extract individual components.")
+                print()
+
+        elif choice == "+ Add Pure Component Outstream":
+            _add_wmf_pure_outstream(company_id, db_path)
+
+        elif choice == "♻ Refresh Quantities":
+            manage_companies.refresh_wmf_outstreams(company_id, db_path)
+            print("  Quantities refreshed from current inflows.")
+            print()
+
+        elif isinstance(choice, dict) and choice.get("action") == "delete":
+            stream_id   = choice["stream_id"]
+            stream_name = choice["stream_name"]
+            confirm = questionary.confirm(
+                f"Delete '{stream_name}' and any flows connected to it?"
+            ).ask()
+            if confirm:
+                manage_companies.delete_wmf_outstream(stream_id, db_path)
+                manage_companies.refresh_wmf_outstreams(company_id, db_path)
+                print(f"  Deleted {stream_name}. Waste Bundle updated.")
+                print()
+
+        elif choice == "Disable All Outstreams":
+            confirm = questionary.confirm(
+                "Delete ALL outstreams and any flows connected to them?"
+            ).ask()
+            if confirm:
+                manage_companies.disable_wmf_outstreams(company_id, db_path)
+                print("  All outstreams removed.")
+                print()
+
+
+def _add_wmf_pure_outstream(company_id: str, db_path: str) -> None:
+    """Prompt the user to select an inflow component and create a pure outstream for it."""
+    totals    = manage_companies.get_wmf_inflow_component_totals(company_id, db_path)
+    outstreams = manage_companies.get_wmf_outstreams(company_id, db_path)
+
+    already_pure = {
+        row["component_id"]
+        for row in outstreams
+        if row["stream_type"] == "product" and row["component_id"]
+    }
+
+    available = {
+        cid: info
+        for cid, info in totals.items()
+        if cid not in already_pure
+    }
+
+    if not available:
+        if not totals:
+            print("  No inflow components found — connect waste_to_wmf flows first.")
+        else:
+            print("  All inflow components already have pure outstreams.")
+        print()
+        return
+
+    choices = [
+        questionary.Choice(
+            title=f"{cid:<8}  {info['name']:<30}  {info['kton']:.3f} kton/yr",
+            value=cid,
+        )
+        for cid, info in sorted(available.items(), key=lambda x: -x[1]["kton"])
+    ]
+    choices.append(questionary.Choice(title="← Back", value=None))
+
+    chosen_cid = questionary.select(
+        "Select component for pure outstream",
+        choices=choices,
+    ).ask()
+
+    if chosen_cid is None:
+        return
+
+    info = available[chosen_cid]
+    manage_companies.create_wmf_pure_outstream(
+        company_id, chosen_cid, info["name"], info["kton"], db_path
+    )
+    manage_companies.refresh_wmf_outstreams(company_id, db_path)
+    print(f"  Created pure outstream for {info['name']} ({info['kton']:.3f} kton/yr).")
+    print()
 
 
 # ---------------------------------------------------------------------------

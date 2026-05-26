@@ -54,6 +54,9 @@ examples:
   # Top 3 components + always show CM111
   python data_exploration/sankey.py --top-n 3 --include-component CM111
 
+  # Exclude a dominant component (fold into 'Other')
+  python data_exploration/sankey.py --top-n 5 --exclude-component CM001
+
   # Products / wastes split, save to file
   python data_exploration/sankey.py --show-products-wastes --output sankey.html
 """,
@@ -69,6 +72,12 @@ examples:
     p.add_argument("--include-component", action="append", default=[],
                    metavar="ID", dest="include_components",
                    help="Always show this component individually (repeatable; component mode only)")
+    p.add_argument("--exclude-component", action="append", default=[],
+                   metavar="ID", dest="exclude_components",
+                   help="Never show this component individually; fold into 'Other' (repeatable; component mode only)")
+    p.add_argument("--hide-component", action="append", default=[],
+                   metavar="ID", dest="hide_components",
+                   help="Remove this component from the plot entirely; its flow is not shown (repeatable; component mode only)")
     p.add_argument("--show-products-wastes", action="store_true",
                    help="Add a 4th node column that splits each company's outputs into Products and Wastes")
     p.add_argument("--output", metavar="PATH",
@@ -106,13 +115,15 @@ def load_data(conn, company_ids):
     """
     ph = _placeholders(company_ids)
 
-    # --- streams (positive flow only) ---
+    # --- streams (positive flow only, scaled by company scaling_factor) ---
     streams = {}
     for row in conn.execute(
         f"""
-        SELECT stream_id, company_id, stream_name, stream_type, direction, flow_kton_per_year
-        FROM streams
-        WHERE company_id IN ({ph}) AND flow_kton_per_year > 0
+        SELECT s.stream_id, s.company_id, s.stream_name, s.stream_type, s.direction,
+               s.flow_kton_per_year * COALESCE(c.scaling_factor, 1.0)
+        FROM streams s
+        JOIN companies c ON c.company_id = s.company_id
+        WHERE s.company_id IN ({ph}) AND s.flow_kton_per_year > 0
         """,
         company_ids,
     ):
@@ -186,7 +197,12 @@ def load_data(conn, company_ids):
     if all_extra_ids:
         ex_ph = _placeholders(all_extra_ids)
         for row in conn.execute(
-            f"SELECT stream_id, flow_kton_per_year FROM streams WHERE stream_id IN ({ex_ph})",
+            f"""
+            SELECT s.stream_id, s.flow_kton_per_year * COALESCE(c.scaling_factor, 1.0)
+            FROM streams s
+            JOIN companies c ON c.company_id = s.company_id
+            WHERE s.stream_id IN ({ex_ph})
+            """,
             all_extra_ids,
         ):
             if row[0] in internal_from_ids:
@@ -276,18 +292,24 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
             else:
                 total_covered = 0.0
                 for f in flow_list:
-                    if f["flow_type"] == "internal":
-                        sender_kton = sender_stream_flows.get(f["from_stream_id"], f["flow_kton"])
+                    from_cid = f["from_company_id"]
+                    if f["flow_type"] == "internal" or from_cid in company_names:
+                        # Sender is a center company (internal flow or promoted WMF/etc.)
+                        sender_kton = (
+                            sender_stream_flows.get(f["from_stream_id"])
+                            or streams.get(f["from_stream_id"], {}).get("flow_kton")
+                            or f["flow_kton"]
+                        )
                         # Flow is capped at the smaller of the two connected streams
                         flow_size = min(sender_kton, s["flow_kton"])
-                        from_name = all_names.get(f["from_company_id"], f["from_company_id"])
+                        from_name = all_names.get(from_cid, from_cid)
                         links.append(_make_link("left", from_name, "center", cname, s, flow_size))
                         total_covered += flow_size
                     else:
-                        # Non-internal input flow: use named node for import_source, else "Import"
-                        ntype = company_node_types.get(f["from_company_id"], "company")
+                        # Non-center sender: named node for import_source, else "Import"
+                        ntype = company_node_types.get(from_cid, "company")
                         src_label = (
-                            all_names.get(f["from_company_id"], "Import")
+                            all_names.get(from_cid, "Import")
                             if ntype == "import_source" else "Import"
                         )
                         links.append(_make_link("left", src_label, "center", cname, s, f["flow_kton"]))
@@ -336,6 +358,11 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                     else:
                         links.append(_make_link("center", cname, "right", rlabel, s, kton))
 
+                    # If the receiver is a center company but has no input stream (to_stream_id is
+                    # None), it cannot generate its own left-side link — do it here from the sender.
+                    if f["to_stream_id"] is None and f["to_company_id"] in company_names:
+                        links.append(_make_link("left", cname, "center", rlabel, s, kton))
+
                 # Any sender output not absorbed by receivers → goes to Export
                 surplus = s["flow_kton"] - total_sent
                 if surplus > 1e-6:
@@ -358,7 +385,8 @@ def _sub_label(company_name, stream_type):
 # Link expansion (component / stream mode)
 # --------------------------------------------------------------------------- #
 
-def expand_by_component(raw_links, composition, top_n, include_component_ids):
+def expand_by_component(raw_links, composition, top_n, include_component_ids,
+                        exclude_component_ids=(), hide_component_ids=()):
     """
     Split each raw link into per-component sub-links.
 
@@ -368,6 +396,8 @@ def expand_by_component(raw_links, composition, top_n, include_component_ids):
       key_to_label      : {color_key: display label}
     """
     include_set = set(include_component_ids)
+    exclude_set = set(exclude_component_ids)
+    hide_set = set(hide_component_ids)
 
     # Compute total kton per component (from non-passthrough links only, to avoid double-counting)
     totals = defaultdict(float)
@@ -380,9 +410,10 @@ def expand_by_component(raw_links, composition, top_n, include_component_ids):
             totals[comp["component_id"]] += kton
             names_map[comp["component_id"]] = comp["name"]
 
-    # Determine top-N set (excluding already force-included)
+    # Determine top-N set (excluding already force-included, force-excluded, and hidden)
     ranked = sorted(
-        [(cid, tot) for cid, tot in totals.items() if cid not in include_set and cid != "CM227"],
+        [(cid, tot) for cid, tot in totals.items()
+         if cid not in include_set and cid not in exclude_set and cid not in hide_set and cid != "CM227"],
         key=lambda x: -x[1],
     )
     top_ids = include_set | {cid for cid, _ in ranked[:top_n]}
@@ -412,6 +443,10 @@ def expand_by_component(raw_links, composition, top_n, include_component_ids):
             kton = lnk["flow_kton"] * comp["fraction"]
             if comp["component_id"] == "CM227":
                 unknown_kton += kton
+            elif comp["component_id"] in hide_set:
+                pass  # drop entirely — not shown anywhere
+            elif comp["component_id"] in exclude_set:
+                other_kton += kton
             elif comp["component_id"] in top_ids:
                 expanded.append({
                     **lnk,
@@ -444,6 +479,22 @@ def expand_by_stream(raw_links):
 
     key_to_label = {lnk["stream_id"]: lnk["stream_name"] for lnk in raw_links}
     return expanded, seen_keys, key_to_label
+
+
+def aggregate_links(expanded):
+    """
+    Merge component-mode links that share the same endpoints and color_key.
+    Multiple streams carrying the same component between the same two nodes
+    are collapsed into one band with summed flow_kton.
+    """
+    merged = {}
+    for lnk in expanded:
+        key = (lnk["src_col"], lnk["src_label"], lnk["tgt_col"], lnk["tgt_label"], lnk["color_key"])
+        if key in merged:
+            merged[key]["flow_kton"] += lnk["flow_kton"]
+        else:
+            merged[key] = dict(lnk)
+    return list(merged.values())
 
 
 # --------------------------------------------------------------------------- #
@@ -703,8 +754,10 @@ def main():
 
     if args.mode == "component":
         expanded, ordered_keys, key_to_label = expand_by_component(
-            raw_links, composition, args.top_n, args.include_components
+            raw_links, composition, args.top_n, args.include_components,
+            args.exclude_components, args.hide_components,
         )
+        expanded = aggregate_links(expanded)
     else:
         expanded, ordered_keys, key_to_label = expand_by_stream(raw_links)
 

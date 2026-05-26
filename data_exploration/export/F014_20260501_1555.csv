@@ -1,0 +1,5 @@
+flow_id,from_company,from_stream,to_company,to_stream,status,measure,stream_a,stream_b,difference,rel_diff
+F014,Methanol Production Plant,PS-CH3OH,DME Plant,FS-CH3OH,candidate,Total flow (kton/yr),300.0,194.95317693907876,105.04682306092124,+35.0%
+F014,Methanol Production Plant,PS-CH3OH,DME Plant,FS-CH3OH,candidate,Methanol,0.9995999999999999,0.9995999999999999,0.0,+0.0%
+F014,Methanol Production Plant,PS-CH3OH,DME Plant,FS-CH3OH,candidate,Water,0.0002,0.00023,-2.9999999999999997e-05,-15.0%
+F014,Methanol Production Plant,PS-CH3OH,DME Plant,FS-CH3OH,candidate,Ethanol,0.0002,0.00017,2.9999999999999997e-05,+15.0%
