@@ -20,7 +20,7 @@ import duckdb
 import pandas as pd
 
 SCRIPT_DIR = Path(__file__).parent
-DEFAULT_DB = SCRIPT_DIR.parent / "industrial_cluster.db"
+DEFAULT_DB = SCRIPT_DIR.parent / "../industrial_cluster.db"
 
 
 def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
@@ -41,16 +41,20 @@ def get_included_companies(con) -> list[tuple]:
 
 
 def get_company_info(con, company_id: str) -> tuple:
-    return con.execute("""
+    return con.execute(
+        """
         SELECT c.name, c.normalize_stream_id, s.stream_name, c.normalize_setpoint, c.scaling_factor
         FROM db.companies c
         LEFT JOIN db.streams s ON c.normalize_stream_id = s.stream_id
         WHERE c.company_id = $id
-    """, {"id": company_id}).fetchone()
+    """,
+        {"id": company_id},
+    ).fetchone()
 
 
 def get_totals(con, company_id: str) -> pd.DataFrame:
-    return con.execute("""
+    return con.execute(
+        """
         SELECT * FROM (
             SELECT
                 direction,
@@ -81,11 +85,14 @@ def get_totals(con, company_id: str) -> pd.DataFrame:
         ORDER BY
             CASE direction   WHEN 'input' THEN 0 ELSE 1 END,
             CASE stream_type WHEN 'TOTAL' THEN 99 ELSE 0 END
-    """, {"company_id": company_id}).df()
+    """,
+        {"company_id": company_id},
+    ).df()
 
 
 def get_streams(con, company_id: str) -> pd.DataFrame:
-    return con.execute("""
+    return con.execute(
+        """
         SELECT
             s.stream_id,
             s.stream_name,
@@ -110,33 +117,70 @@ def get_streams(con, company_id: str) -> pd.DataFrame:
                 ELSE 3
             END,
             s.flow_kton_per_year DESC
-    """, {"company_id": company_id}).df()
+    """,
+        {"company_id": company_id},
+    ).df()
 
 
 def compute_balance(df_totals: pd.DataFrame) -> dict:
     totals = df_totals[df_totals["stream_type"] == "TOTAL"].set_index("direction")
-    total_in  = totals.loc["input",  "total_flow_kton_per_year"] if "input"  in totals.index else 0.0
-    total_out = totals.loc["output", "total_flow_kton_per_year"] if "output" in totals.index else 0.0
+    total_in = (
+        totals.loc["input", "total_flow_kton_per_year"]
+        if "input" in totals.index
+        else 0.0
+    )
+    total_out = (
+        totals.loc["output", "total_flow_kton_per_year"]
+        if "output" in totals.index
+        else 0.0
+    )
     gap = total_in - total_out
     closure = (1 - abs(gap) / total_in) * 100 if total_in else float("nan")
-    carbon_in  = totals.loc["input",  "total_carbon_flow_kton_per_year"] if "input"  in totals.index else 0.0
-    carbon_out = totals.loc["output", "total_carbon_flow_kton_per_year"] if "output" in totals.index else 0.0
+    carbon_in = (
+        totals.loc["input", "total_carbon_flow_kton_per_year"]
+        if "input" in totals.index
+        else 0.0
+    )
+    carbon_out = (
+        totals.loc["output", "total_carbon_flow_kton_per_year"]
+        if "output" in totals.index
+        else 0.0
+    )
     carbon_gap = carbon_in - carbon_out
-    carbon_closure = (1 - abs(carbon_gap) / carbon_in) * 100 if carbon_in else float("nan")
+    carbon_closure = (
+        (1 - abs(carbon_gap) / carbon_in) * 100 if carbon_in else float("nan")
+    )
     return dict(
-        total_in=total_in, total_out=total_out, gap=gap, closure=closure,
-        carbon_in=carbon_in, carbon_out=carbon_out, carbon_gap=carbon_gap,
+        total_in=total_in,
+        total_out=total_out,
+        gap=gap,
+        closure=closure,
+        carbon_in=carbon_in,
+        carbon_out=carbon_out,
+        carbon_gap=carbon_gap,
         carbon_closure=carbon_closure,
     )
 
 
-def print_single(company_id: str, company_name: str, ref_stream_id, ref_stream_name,
-                 normalize_setpoint, scaling_factor, b: dict, df_streams: pd.DataFrame):
+def print_single(
+    company_id: str,
+    company_name: str,
+    ref_stream_id,
+    ref_stream_name,
+    normalize_setpoint,
+    scaling_factor,
+    b: dict,
+    df_streams: pd.DataFrame,
+):
     print(f"\nCompany : {company_id}  {company_name}")
     print("─" * 40)
     print(f"Reference stream  : {ref_stream_id or 'None'}  {ref_stream_name or ''}")
-    print(f"Normalize setpoint: {normalize_setpoint if normalize_setpoint is not None else 'None'}")
-    print(f"Scaling factor    : {scaling_factor if scaling_factor is not None else 'None'}")
+    print(
+        f"Normalize setpoint: {normalize_setpoint if normalize_setpoint is not None else 'None'}"
+    )
+    print(
+        f"Scaling factor    : {scaling_factor if scaling_factor is not None else 'None'}"
+    )
     print("─" * 40)
     print(f"Total input       : {b['total_in']:>10.3f}  kton/yr")
     print(f"Total output      : {b['total_out']:>10.3f}  kton/yr")
@@ -154,12 +198,29 @@ def print_single(company_id: str, company_name: str, ref_stream_id, ref_stream_n
 
 def print_all_summary(rows: list[dict]):
     df = pd.DataFrame(rows)
-    col_order = ["company_id", "company_name", "reference_stream_id", "reference_stream_name",
-                 "normalize_setpoint", "scaling_factor",
-                 "total_in", "total_out", "gap", "mass_closure_pct",
-                 "carbon_in", "carbon_out", "carbon_gap", "carbon_closure_pct"]
+    col_order = [
+        "company_id",
+        "company_name",
+        "reference_stream_id",
+        "reference_stream_name",
+        "normalize_setpoint",
+        "scaling_factor",
+        "total_in",
+        "total_out",
+        "gap",
+        "mass_closure_pct",
+        "carbon_in",
+        "carbon_out",
+        "carbon_gap",
+        "carbon_closure_pct",
+    ]
     df = df[col_order]
-    df = df.rename(columns={"mass_closure_pct": "mass_closure%", "carbon_closure_pct": "carbon_closure%"})
+    df = df.rename(
+        columns={
+            "mass_closure_pct": "mass_closure%",
+            "carbon_closure_pct": "carbon_closure%",
+        }
+    )
     print()
     print(df.to_string(index=False))
     print()
@@ -214,26 +275,40 @@ def main():
 
         summary_rows = []
 
-        for company_id, company_name, ref_sid, ref_sname, setpoint, scaling in companies:
+        for (
+            company_id,
+            company_name,
+            ref_sid,
+            ref_sname,
+            setpoint,
+            scaling,
+        ) in companies:
             df_totals = get_totals(con, company_id)
             b = compute_balance(df_totals)
-            summary_rows.append({
-                "company_id": company_id,
-                "company_name": company_name,
-                "reference_stream_id": ref_sid,
-                "reference_stream_name": ref_sname,
-                "normalize_setpoint": setpoint,
-                "scaling_factor": scaling,
-                **{k: round(v, 3) if isinstance(v, float) else v for k, v in b.items()
-                   if k not in ("closure", "carbon_closure")},
-                "mass_closure_pct": round(b["closure"], 2),
-                "carbon_closure_pct": round(b["carbon_closure"], 2),
-            })
+            summary_rows.append(
+                {
+                    "company_id": company_id,
+                    "company_name": company_name,
+                    "reference_stream_id": ref_sid,
+                    "reference_stream_name": ref_sname,
+                    "normalize_setpoint": setpoint,
+                    "scaling_factor": scaling,
+                    **{
+                        k: round(v, 3) if isinstance(v, float) else v
+                        for k, v in b.items()
+                        if k not in ("closure", "carbon_closure")
+                    },
+                    "mass_closure_pct": round(b["closure"], 2),
+                    "carbon_closure_pct": round(b["carbon_closure"], 2),
+                }
+            )
 
         print_all_summary(summary_rows)
 
         if to_csv:
-            df_summary = pd.DataFrame(summary_rows).rename(columns={"closure_pct": "closure%"})
+            df_summary = pd.DataFrame(summary_rows).rename(
+                columns={"closure_pct": "closure%"}
+            )
             export_csv(df_summary, SCRIPT_DIR / "export")
 
     else:
@@ -248,21 +323,37 @@ def main():
         df_streams = get_streams(con, company_id)
         b = compute_balance(df_totals)
 
-        print_single(company_id, company_name, ref_sid, ref_sname, setpoint, scaling, b, df_streams)
+        print_single(
+            company_id,
+            company_name,
+            ref_sid,
+            ref_sname,
+            setpoint,
+            scaling,
+            b,
+            df_streams,
+        )
 
         if to_csv:
-            df_summary = pd.DataFrame([{
-                "company_id": company_id,
-                "company_name": company_name,
-                "reference_stream_id": ref_sid,
-                "reference_stream_name": ref_sname,
-                "normalize_setpoint": setpoint,
-                "scaling_factor": scaling,
-                **{k: round(v, 3) if isinstance(v, float) else v for k, v in b.items()
-                   if k != "closure"},
-                "mass_closure%": round(b["closure"], 2),
-                "carbon_closure%": round(b["carbon_closure"], 2),
-            }])
+            df_summary = pd.DataFrame(
+                [
+                    {
+                        "company_id": company_id,
+                        "company_name": company_name,
+                        "reference_stream_id": ref_sid,
+                        "reference_stream_name": ref_sname,
+                        "normalize_setpoint": setpoint,
+                        "scaling_factor": scaling,
+                        **{
+                            k: round(v, 3) if isinstance(v, float) else v
+                            for k, v in b.items()
+                            if k != "closure"
+                        },
+                        "mass_closure%": round(b["closure"], 2),
+                        "carbon_closure%": round(b["carbon_closure"], 2),
+                    }
+                ]
+            )
             export_csv(df_summary, SCRIPT_DIR / "export")
 
 

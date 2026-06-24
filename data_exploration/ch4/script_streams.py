@@ -22,12 +22,12 @@ import duckdb
 import pandas as pd
 
 SCRIPT_DIR = Path(__file__).parent
-DEFAULT_DB = SCRIPT_DIR.parent / "industrial_cluster.db"
+DEFAULT_DB = SCRIPT_DIR.parent / "../industrial_cluster.db"
 
 STREAM_TYPE_LABELS = {
     "raw_material": "RAW MATERIALS (input)",
-    "product":      "PRODUCTS (output)",
-    "waste":        "WASTE (output)",
+    "product": "PRODUCTS (output)",
+    "waste": "WASTE (output)",
 }
 
 DISPLAY_COLS = [
@@ -49,7 +49,9 @@ def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
 
 
 def get_all_company_ids(con) -> list[str]:
-    rows = con.execute("SELECT company_id FROM db.companies ORDER BY company_id").fetchall()
+    rows = con.execute(
+        "SELECT company_id FROM db.companies ORDER BY company_id"
+    ).fetchall()
     return [r[0] for r in rows]
 
 
@@ -116,7 +118,11 @@ def get_streams(con, company_ids: list[str]) -> pd.DataFrame:
 
 
 def print_streams(df: pd.DataFrame, multi_company: bool):
-    cols = DISPLAY_COLS if multi_company else [c for c in DISPLAY_COLS if c not in ("company_id", "company_name")]
+    cols = (
+        DISPLAY_COLS
+        if multi_company
+        else [c for c in DISPLAY_COLS if c not in ("company_id", "company_name")]
+    )
 
     for stream_type, label in STREAM_TYPE_LABELS.items():
         group = df[df["stream_type"] == stream_type][cols]

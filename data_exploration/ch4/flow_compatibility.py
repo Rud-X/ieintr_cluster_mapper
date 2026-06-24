@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend, no display needed
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,15 +30,16 @@ from plotly.subplots import make_subplots
 # Colors
 # --------------------------------------------------------------------------- #
 
-COLOR_A = "#4e79a7"   # Stream A (from / output)
-COLOR_B = "#f28e2b"   # Stream B (to / input)
+COLOR_A = "#4e79a7"  # Stream A (from / output)
+COLOR_B = "#f28e2b"  # Stream B (to / input)
 
-EXPORT_DIR = Path(__file__).parent / "export"
+EXPORT_DIR = Path(__file__).parent / "../export"
 
 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -66,32 +68,71 @@ examples:
   python data_exploration/flow_compatibility.py --save-png flows.png
 """,
     )
-    p.add_argument("--db", default="industrial_cluster.db",
-                   help="SQLite database path (default: industrial_cluster.db)")
-    p.add_argument("--flow", nargs="+", metavar="FLOW_ID", dest="flows",
-                   help="Flow ID(s) to compare (default: all flows)")
-    p.add_argument("--save-text", nargs="?", const="", metavar="PATH",
-                   help="Save comparison tables as plain text (default: data_exploration/export/)")
-    p.add_argument("--save-csv", nargs="?", const="", metavar="PATH",
-                   help="Save comparison tables as CSV (default: data_exploration/export/)")
-    p.add_argument("--visual", action="store_true",
-                   help="Open visualization in browser")
-    p.add_argument("--save-visual", nargs="?", const="", metavar="PATH",
-                   help="Save visualization as HTML (default: data_exploration/export/)")
-    p.add_argument("--save-png", nargs="?", const="", metavar="PATH",
-                   help="Save visualization as PNG (default: data_exploration/export/, requires kaleido)")
-    p.add_argument("--flow-rate-only", action="store_true",
-                   help="Compare only total flow rates, skip composition breakdown")
-    p.add_argument("--list-flows", action="store_true",
-                   help="Print all flows with company/stream names, then exit")
-    p.add_argument("--select", action="store_true",
-                   help="Show a numbered flow list and prompt for selection")
+    p.add_argument(
+        "--db",
+        default="industrial_cluster.db",
+        help="SQLite database path (default: industrial_cluster.db)",
+    )
+    p.add_argument(
+        "--flow",
+        nargs="+",
+        metavar="FLOW_ID",
+        dest="flows",
+        help="Flow ID(s) to compare (default: all flows)",
+    )
+    p.add_argument(
+        "--save-text",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="Save comparison tables as plain text (default: data_exploration/export/)",
+    )
+    p.add_argument(
+        "--save-csv",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="Save comparison tables as CSV (default: data_exploration/export/)",
+    )
+    p.add_argument(
+        "--visual", action="store_true", help="Open visualization in browser"
+    )
+    p.add_argument(
+        "--save-visual",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="Save visualization as HTML (default: data_exploration/export/)",
+    )
+    p.add_argument(
+        "--save-png",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="Save visualization as PNG (default: data_exploration/export/, requires kaleido)",
+    )
+    p.add_argument(
+        "--flow-rate-only",
+        action="store_true",
+        help="Compare only total flow rates, skip composition breakdown",
+    )
+    p.add_argument(
+        "--list-flows",
+        action="store_true",
+        help="Print all flows with company/stream names, then exit",
+    )
+    p.add_argument(
+        "--select",
+        action="store_true",
+        help="Show a numbered flow list and prompt for selection",
+    )
     return p.parse_args()
 
 
 # --------------------------------------------------------------------------- #
 # Database helpers
 # --------------------------------------------------------------------------- #
+
 
 def _placeholders(ids):
     return ",".join("?" * len(ids))
@@ -118,11 +159,17 @@ _FLOW_SELECT = """
 def _row_to_flow(r):
     return {
         "flow_id": r[0],
-        "from_stream_id": r[1], "to_stream_id": r[2],
-        "flow_kton_per_year": r[3], "status": r[4], "flow_type": r[5],
-        "from_stream_name": r[6], "to_stream_name": r[7],
-        "from_company": r[8], "to_company": r[9],
-        "from_flow_kton": r[10], "to_flow_kton": r[11],
+        "from_stream_id": r[1],
+        "to_stream_id": r[2],
+        "flow_kton_per_year": r[3],
+        "status": r[4],
+        "flow_type": r[5],
+        "from_stream_name": r[6],
+        "to_stream_name": r[7],
+        "from_company": r[8],
+        "to_company": r[9],
+        "from_flow_kton": r[10],
+        "to_flow_kton": r[11],
     }
 
 
@@ -162,7 +209,9 @@ def load_compositions(conn, stream_ids):
     ).fetchall()
     result = defaultdict(list)
     for r in rows:
-        result[r[0]].append({"component_name": r[1], "fraction": r[2], "is_trace": bool(r[3])})
+        result[r[0]].append(
+            {"component_name": r[1], "fraction": r[2], "is_trace": bool(r[3])}
+        )
     return dict(result)
 
 
@@ -170,11 +219,13 @@ def load_compositions(conn, stream_ids):
 # Comparison rows
 # --------------------------------------------------------------------------- #
 
+
 def build_comparison_rows(flow, comp_a, comp_b, flow_rate_only=False):
     """
     Build list of row dicts for a single flow comparison.
     Each row: {measure, val_a, val_b, diff, rel_diff, is_trace}
     """
+
     def _rel(diff, denom):
         return f"{diff / denom * 100:+.1f}%" if denom != 0 else "—"
 
@@ -183,42 +234,64 @@ def build_comparison_rows(flow, comp_a, comp_b, flow_rate_only=False):
     a = flow["from_flow_kton"] or 0.0
     b = flow["to_flow_kton"] or 0.0
     diff = a - b
-    rows.append({
-        "measure": "Total flow (kton/yr)",
-        "val_a": a, "val_b": b,
-        "diff": diff, "rel_diff": _rel(diff, a),
-        "is_trace": False,
-    })
+    rows.append(
+        {
+            "measure": "Total flow (kton/yr)",
+            "val_a": a,
+            "val_b": b,
+            "diff": diff,
+            "rel_diff": _rel(diff, a),
+            "is_trace": False,
+        }
+    )
 
     if flow_rate_only or flow["from_stream_id"] is None or flow["to_stream_id"] is None:
         return rows
 
     # Merge components from both streams
     merged = {}
-    for entry in (comp_a or []):
+    for entry in comp_a or []:
         n = entry["component_name"]
-        merged[n] = {"frac_a": entry["fraction"], "frac_b": 0.0, "is_trace": entry["is_trace"]}
-    for entry in (comp_b or []):
+        merged[n] = {
+            "frac_a": entry["fraction"],
+            "frac_b": 0.0,
+            "is_trace": entry["is_trace"],
+        }
+    for entry in comp_b or []:
         n = entry["component_name"]
         if n in merged:
             merged[n]["frac_b"] = entry["fraction"]
             merged[n]["is_trace"] = merged[n]["is_trace"] and entry["is_trace"]
         else:
-            merged[n] = {"frac_a": 0.0, "frac_b": entry["fraction"], "is_trace": entry["is_trace"]}
+            merged[n] = {
+                "frac_a": 0.0,
+                "frac_b": entry["fraction"],
+                "is_trace": entry["is_trace"],
+            }
 
-    non_trace = sorted([(n, v) for n, v in merged.items() if not v["is_trace"]], key=lambda x: -x[1]["frac_a"])
-    trace = sorted([(n, v) for n, v in merged.items() if v["is_trace"]], key=lambda x: -x[1]["frac_a"])
+    non_trace = sorted(
+        [(n, v) for n, v in merged.items() if not v["is_trace"]],
+        key=lambda x: -x[1]["frac_a"],
+    )
+    trace = sorted(
+        [(n, v) for n, v in merged.items() if v["is_trace"]],
+        key=lambda x: -x[1]["frac_a"],
+    )
 
     for name, v in non_trace + trace:
         fa, fb = v["frac_a"], v["frac_b"]
         diff = fa - fb
         label = f"~{name} (trace)" if v["is_trace"] else f"{name}"
-        rows.append({
-            "measure": label,
-            "val_a": fa, "val_b": fb,
-            "diff": diff, "rel_diff": _rel(diff, fa),
-            "is_trace": v["is_trace"],
-        })
+        rows.append(
+            {
+                "measure": label,
+                "val_a": fa,
+                "val_b": fb,
+                "diff": diff,
+                "rel_diff": _rel(diff, fa),
+                "is_trace": v["is_trace"],
+            }
+        )
 
     return rows
 
@@ -226,6 +299,7 @@ def build_comparison_rows(flow, comp_a, comp_b, flow_rate_only=False):
 # --------------------------------------------------------------------------- #
 # Table formatting
 # --------------------------------------------------------------------------- #
+
 
 def format_table(flow, rows):
     """Return a formatted ASCII table string for one flow comparison."""
@@ -259,13 +333,17 @@ def format_table(flow, rows):
     ]
     for r in rows:
         is_total = r["measure"].startswith("Total")
-        lines.append(_row([
-            r["measure"],
-            _cell(r["val_a"], is_total),
-            _cell(r["val_b"], is_total),
-            _cell(r["diff"], is_total),
-            r["rel_diff"],
-        ]))
+        lines.append(
+            _row(
+                [
+                    r["measure"],
+                    _cell(r["val_a"], is_total),
+                    _cell(r["val_b"], is_total),
+                    _cell(r["diff"], is_total),
+                    r["rel_diff"],
+                ]
+            )
+        )
     lines.append(thick)
     return "\n".join(lines)
 
@@ -274,30 +352,49 @@ def format_table(flow, rows):
 # CSV formatting
 # --------------------------------------------------------------------------- #
 
+
 def format_csv(flows_data):
     """Return CSV string with all flows. Each flow is preceded by a header row."""
     buf = io.StringIO()
     writer = csv.writer(buf)
-    cols = ["flow_id", "from_company", "from_stream", "to_company", "to_stream",
-            "status", "measure", "stream_a", "stream_b", "difference", "rel_diff"]
+    cols = [
+        "flow_id",
+        "from_company",
+        "from_stream",
+        "to_company",
+        "to_stream",
+        "status",
+        "measure",
+        "stream_a",
+        "stream_b",
+        "difference",
+        "rel_diff",
+    ]
     writer.writerow(cols)
     for flow, rows in flows_data:
         for r in rows:
-            writer.writerow([
-                flow["flow_id"],
-                flow["from_company"], flow["from_stream_name"],
-                flow["to_company"], flow["to_stream_name"],
-                flow["status"],
-                r["measure"],
-                r["val_a"], r["val_b"],
-                r["diff"], r["rel_diff"],
-            ])
+            writer.writerow(
+                [
+                    flow["flow_id"],
+                    flow["from_company"],
+                    flow["from_stream_name"],
+                    flow["to_company"],
+                    flow["to_stream_name"],
+                    flow["status"],
+                    r["measure"],
+                    r["val_a"],
+                    r["val_b"],
+                    r["diff"],
+                    r["rel_diff"],
+                ]
+            )
     return buf.getvalue()
 
 
 # --------------------------------------------------------------------------- #
 # Flow listing and interactive selection
 # --------------------------------------------------------------------------- #
+
 
 def print_flow_list(flows):
     """Print a numbered table of all flows."""
@@ -307,12 +404,14 @@ def print_flow_list(flows):
 
     W_N = max(2, len(str(len(flows))))
     W_ID = max(len("Flow ID"), max(len(f["flow_id"]) for f in flows))
-    W_FROM = max(len("From Company → Stream"), max(
-        len(f"{f['from_company']} → {f['from_stream_name']}") for f in flows
-    ))
-    W_TO = max(len("To Company → Stream"), max(
-        len(f"{f['to_company']} → {f['to_stream_name']}") for f in flows
-    ))
+    W_FROM = max(
+        len("From Company → Stream"),
+        max(len(f"{f['from_company']} → {f['from_stream_name']}") for f in flows),
+    )
+    W_TO = max(
+        len("To Company → Stream"),
+        max(len(f"{f['to_company']} → {f['to_stream_name']}") for f in flows),
+    )
     W_ST = max(len("Status"), max(len(f["status"]) for f in flows))
 
     def _row(n, fid, frm, to, status):
@@ -322,15 +421,20 @@ def print_flow_list(flows):
         )
 
     sep = "  " + "─" * (W_N + 2 + W_ID + 2 + W_FROM + 2 + W_TO + 2 + W_ST)
-    print(_row("#", "Flow ID", "From Company → Stream", "To Company → Stream", "Status"))
+    print(
+        _row("#", "Flow ID", "From Company → Stream", "To Company → Stream", "Status")
+    )
     print(sep)
     for i, f in enumerate(flows, 1):
-        print(_row(
-            i, f["flow_id"],
-            f"{f['from_company']} → {f['from_stream_name']}",
-            f"{f['to_company']} → {f['to_stream_name']}",
-            f["status"],
-        ))
+        print(
+            _row(
+                i,
+                f["flow_id"],
+                f"{f['from_company']} → {f['from_stream_name']}",
+                f"{f['to_company']} → {f['to_stream_name']}",
+                f["status"],
+            )
+        )
 
 
 def select_flows(all_flows):
@@ -340,7 +444,9 @@ def select_flows(all_flows):
         return []
     print()
     try:
-        raw = input("Enter flow number(s) to compare (e.g. 1, 1 3 5, or 'all') [all]: ").strip()
+        raw = input(
+            "Enter flow number(s) to compare (e.g. 1, 1 3 5, or 'all') [all]: "
+        ).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return []
@@ -365,6 +471,7 @@ def select_flows(all_flows):
 # Visualization
 # --------------------------------------------------------------------------- #
 
+
 def build_figure(flows_data, flow_rate_only=False):
     """Build a plotly Figure comparing streams for each flow.
 
@@ -381,7 +488,10 @@ def build_figure(flows_data, flow_rate_only=False):
         titles = []
         for flow, _ in flows_data:
             base = f"Flow {flow['flow_id']}: {flow['from_company']} (A) → {flow['to_company']} (B)"
-            titles += [f"{base}<br>Flow Rate (kton/yr)", f"{base}<br>Relative Flow Rate (% of A)"]
+            titles += [
+                f"{base}<br>Flow Rate (kton/yr)",
+                f"{base}<br>Relative Flow Rate (% of A)",
+            ]
     else:
         n_rows = n * 2
         specs = ([[{}, {}], [{"colspan": 2}, None]]) * n
@@ -392,7 +502,7 @@ def build_figure(flows_data, flow_rate_only=False):
                 f"{base}<br>Flow Rate (kton/yr)",
                 f"{base}<br>Relative Flow Rate (% of A)",
                 f"{base}<br>Component Composition (fraction)",
-                "",   # placeholder for the None cell in the colspan row
+                "",  # placeholder for the None cell in the colspan row
             ]
 
     fig = make_subplots(
@@ -408,7 +518,9 @@ def build_figure(flows_data, flow_rate_only=False):
 
     def _bar(name, color, x, y, hover_suffix, group, show_legend):
         return go.Bar(
-            name=name, x=x, y=y,
+            name=name,
+            x=x,
+            y=y,
             marker_color=color,
             showlegend=show_legend,
             legendgroup=group,
@@ -417,7 +529,7 @@ def build_figure(flows_data, flow_rate_only=False):
 
     for i, (flow, rows) in enumerate(flows_data):
         row_ab = i * 2 + 1 if not flow_rate_only else i + 1
-        row_c  = i * 2 + 2  # only used when not flow_rate_only
+        row_c = i * 2 + 2  # only used when not flow_rate_only
 
         name_a = f"Stream A: {flow['from_stream_name']}"
         name_b = f"Stream B: {flow['to_stream_name']}"
@@ -431,13 +543,31 @@ def build_figure(flows_data, flow_rate_only=False):
         legend_shown.update(["A", "B"])
 
         # Plot A — actual flow rates
-        fig.add_trace(_bar(name_a, COLOR_A, ["Flow Rate"], [val_a], " kton/yr", "A", show_a), row=row_ab, col=1)
-        fig.add_trace(_bar(name_b, COLOR_B, ["Flow Rate"], [val_b], " kton/yr", "B", show_b), row=row_ab, col=1)
+        fig.add_trace(
+            _bar(name_a, COLOR_A, ["Flow Rate"], [val_a], " kton/yr", "A", show_a),
+            row=row_ab,
+            col=1,
+        )
+        fig.add_trace(
+            _bar(name_b, COLOR_B, ["Flow Rate"], [val_b], " kton/yr", "B", show_b),
+            row=row_ab,
+            col=1,
+        )
 
         # Plot B — relative (% of Stream A)
-        fig.add_trace(_bar(name_a, COLOR_A, ["Flow Rate"], [100.0], "%", "A", False), row=row_ab, col=2)
-        fig.add_trace(_bar(name_b, COLOR_B, ["Flow Rate"], [rel_b],  "%", "B", False), row=row_ab, col=2)
-        fig.add_hline(y=100, line_dash="dash", line_color="grey", line_width=1, row=row_ab, col=2)
+        fig.add_trace(
+            _bar(name_a, COLOR_A, ["Flow Rate"], [100.0], "%", "A", False),
+            row=row_ab,
+            col=2,
+        )
+        fig.add_trace(
+            _bar(name_b, COLOR_B, ["Flow Rate"], [rel_b], "%", "B", False),
+            row=row_ab,
+            col=2,
+        )
+        fig.add_hline(
+            y=100, line_dash="dash", line_color="grey", line_width=1, row=row_ab, col=2
+        )
 
         # Plot C — component fractions (full-width bottom row)
         if not flow_rate_only:
@@ -446,11 +576,25 @@ def build_figure(flows_data, flow_rate_only=False):
                 labels = [r["measure"] for r in comp_rows]
                 vals_a = [r["val_a"] for r in comp_rows]
                 vals_b = [r["val_b"] for r in comp_rows]
-                fig.add_trace(_bar(name_a, COLOR_A, labels, vals_a, "", "A", False), row=row_c, col=1)
-                fig.add_trace(_bar(name_b, COLOR_B, labels, vals_b, "", "B", False), row=row_c, col=1)
+                fig.add_trace(
+                    _bar(name_a, COLOR_A, labels, vals_a, "", "A", False),
+                    row=row_c,
+                    col=1,
+                )
+                fig.add_trace(
+                    _bar(name_b, COLOR_B, labels, vals_b, "", "B", False),
+                    row=row_c,
+                    col=1,
+                )
             else:
-                fig.add_annotation(text="No composition data", showarrow=False,
-                                   xref="paper", yref="paper", x=0.5, y=0.5)
+                fig.add_annotation(
+                    text="No composition data",
+                    showarrow=False,
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                )
 
     fig.update_layout(
         title_text="Flow Compatibility — Stream Comparison",
@@ -467,6 +611,7 @@ def build_figure(flows_data, flow_rate_only=False):
 # PNG export (matplotlib — no browser required)
 # --------------------------------------------------------------------------- #
 
+
 def save_png_matplotlib(flows_data, path, flow_rate_only=False):
     """Save PNG using matplotlib (no browser/kaleido needed).
 
@@ -482,7 +627,9 @@ def save_png_matplotlib(flows_data, path, flow_rate_only=False):
     fig_h = n * (row_height + comp_height) + 1.2
 
     fig = plt.figure(figsize=(12, fig_h))
-    fig.suptitle("Flow Compatibility — Stream Comparison", fontsize=13, fontweight="bold")
+    fig.suptitle(
+        "Flow Compatibility — Stream Comparison", fontsize=13, fontweight="bold"
+    )
 
     outer_gs = GridSpec(n, 1, figure=fig, hspace=0.6, top=0.88, bottom=0.05)
     bar_width = 0.35
@@ -497,13 +644,19 @@ def save_png_matplotlib(flows_data, path, flow_rate_only=False):
         rel_b = val_b / val_a * 100 if val_a else 0.0
 
         if flow_rate_only:
-            inner_gs = GridSpecFromSubplotSpec(1, 2, subplot_spec=outer_gs[i], wspace=0.3)
+            inner_gs = GridSpecFromSubplotSpec(
+                1, 2, subplot_spec=outer_gs[i], wspace=0.3
+            )
             ax_a = fig.add_subplot(inner_gs[0, 0])
             ax_b = fig.add_subplot(inner_gs[0, 1])
         else:
             inner_gs = GridSpecFromSubplotSpec(
-                2, 2, subplot_spec=outer_gs[i],
-                height_ratios=[row_height, comp_height], hspace=0.5, wspace=0.3,
+                2,
+                2,
+                subplot_spec=outer_gs[i],
+                height_ratios=[row_height, comp_height],
+                hspace=0.5,
+                wspace=0.3,
             )
             ax_a = fig.add_subplot(inner_gs[0, 0])
             ax_b = fig.add_subplot(inner_gs[0, 1])
@@ -511,17 +664,23 @@ def save_png_matplotlib(flows_data, path, flow_rate_only=False):
 
         # Plot A — actual flow rates
         ax_a.set_title(f"{title}\nFlow Rate (kton/yr)", fontsize=9, fontweight="bold")
-        ax_a.bar([-bar_width / 2], [val_a], width=bar_width, color=COLOR_A, label=name_a)
-        ax_a.bar([ bar_width / 2], [val_b], width=bar_width, color=COLOR_B, label=name_b)
+        ax_a.bar(
+            [-bar_width / 2], [val_a], width=bar_width, color=COLOR_A, label=name_a
+        )
+        ax_a.bar([bar_width / 2], [val_b], width=bar_width, color=COLOR_B, label=name_b)
         ax_a.set_xticks([0])
         ax_a.set_xticklabels(["Total Flow Rate"])
         ax_a.set_ylabel("kton/yr")
         ax_a.legend(fontsize=7)
 
         # Plot B — relative (% of Stream A)
-        ax_b.set_title(f"{title}\nRelative Flow Rate (% of A)", fontsize=9, fontweight="bold")
-        ax_b.bar([-bar_width / 2], [100.0], width=bar_width, color=COLOR_A, label=name_a)
-        ax_b.bar([ bar_width / 2], [rel_b],  width=bar_width, color=COLOR_B, label=name_b)
+        ax_b.set_title(
+            f"{title}\nRelative Flow Rate (% of A)", fontsize=9, fontweight="bold"
+        )
+        ax_b.bar(
+            [-bar_width / 2], [100.0], width=bar_width, color=COLOR_A, label=name_a
+        )
+        ax_b.bar([bar_width / 2], [rel_b], width=bar_width, color=COLOR_B, label=name_b)
         ax_b.axhline(100, color="grey", linestyle="--", linewidth=0.9, zorder=0)
         ax_b.set_xticks([0])
         ax_b.set_xticklabels(["Total Flow Rate"])
@@ -536,16 +695,36 @@ def save_png_matplotlib(flows_data, path, flow_rate_only=False):
                 x = np.arange(len(labels))
                 vals_a = [r["val_a"] for r in comp_rows]
                 vals_b = [r["val_b"] for r in comp_rows]
-                ax_c.bar(x - bar_width / 2, vals_a, width=bar_width, color=COLOR_A, label=name_a)
-                ax_c.bar(x + bar_width / 2, vals_b, width=bar_width, color=COLOR_B, label=name_b)
+                ax_c.bar(
+                    x - bar_width / 2,
+                    vals_a,
+                    width=bar_width,
+                    color=COLOR_A,
+                    label=name_a,
+                )
+                ax_c.bar(
+                    x + bar_width / 2,
+                    vals_b,
+                    width=bar_width,
+                    color=COLOR_B,
+                    label=name_b,
+                )
                 ax_c.set_title("Component Composition (fraction)", fontsize=9)
                 ax_c.set_xticks(x)
                 ax_c.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
                 ax_c.set_ylabel("Fraction")
                 ax_c.legend(fontsize=7)
             else:
-                ax_c.text(0.5, 0.5, "No composition data", ha="center", va="center",
-                          transform=ax_c.transAxes, fontsize=10, color="grey")
+                ax_c.text(
+                    0.5,
+                    0.5,
+                    "No composition data",
+                    ha="center",
+                    va="center",
+                    transform=ax_c.transAxes,
+                    fontsize=10,
+                    color="grey",
+                )
                 ax_c.axis("off")
 
     fig.savefig(str(path), dpi=150, bbox_inches="tight", pad_inches=0.3)
@@ -555,6 +734,7 @@ def save_png_matplotlib(flows_data, path, flow_rate_only=False):
 # --------------------------------------------------------------------------- #
 # Export path helpers
 # --------------------------------------------------------------------------- #
+
 
 def _default_stem(flows_data):
     ids = [f["flow_id"] for f, _ in flows_data]
@@ -574,6 +754,7 @@ def _resolve_path(arg, stem, suffix):
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+
 
 def main():
     args = parse_args()
@@ -605,7 +786,9 @@ def main():
         conn.close()
         return
 
-    stream_ids = list({sid for f in flows for sid in (f["from_stream_id"], f["to_stream_id"]) if sid})
+    stream_ids = list(
+        {sid for f in flows for sid in (f["from_stream_id"], f["to_stream_id"]) if sid}
+    )
     compositions = load_compositions(conn, stream_ids)
 
     flows_data = []

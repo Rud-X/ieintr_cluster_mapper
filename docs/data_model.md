@@ -15,8 +15,12 @@ erDiagram
         TEXT location
         TEXT node_type
         REAL scaling_factor
+        INTEGER scaling_factor_manual
         INTEGER included
         TEXT normalize_stream_id FK
+        REAL normalize_setpoint
+        REAL graph_x
+        REAL graph_y
     }
 
     streams {
@@ -93,9 +97,13 @@ One row per company **or external node**. Real companies are auto-generated from
 | `sector` | TEXT | Industry sector — filled manually |
 | `location` | TEXT | Zone or address — filled manually |
 | `node_type` | TEXT | `'company'` (default), `'import_source'`, `'export_sink'`, or `'waste_facility'`. See **External Nodes** below. Added by `migrate_add_external_nodes.py`. |
-| `scaling_factor` | REAL | Display multiplier (0.1–5.0, default 1.0). Applied client-side to kton/year display only; raw DB values are never modified. Added by `migrate_add_company_columns.py`. |
+| `scaling_factor` | REAL | Multiplier (default 1.0) that produces `norm_flow_kton_per_year` from raw flow. **Computed and written by `normalize_streams.py`** — `setpoint / ref_flow` when a reference stream is set, or a manually-entered value when `scaling_factor_manual = 1`. Raw `flow_kton_per_year` is never modified. Added by `migrate_add_company_columns.py`. |
+| `scaling_factor_manual` | INTEGER | `1` = use the stored `scaling_factor` directly (manual override); `0` (default) = recompute it from the reference stream / setpoint. Added by `migrate_add_scaling_factor_manual.py`. |
 | `included` | INTEGER | `1` = visible in cluster analysis, `0` = excluded. Added by `migrate_add_company_columns.py`. |
-| `normalize_stream_id` | TEXT (FK → streams) | Reference stream for per-company normalization. Must be an `output`-direction stream of this company with `flow > 0`. `NULL` = normalization disabled. Added by `migrate_add_normalization.py`. |
+| `normalize_stream_id` | TEXT (FK → streams) | Reference stream for per-company normalization. Must be a stream of this company with `flow > 0`. `NULL` = no reference (normalized flow falls back to the raw flow). Added by `migrate_add_normalization.py`. |
+| `normalize_setpoint` | REAL | Target value (default 1.0) the reference stream is scaled to. With a reference set, `norm_flow = flow / ref_flow × setpoint`. Added by `migrate_add_normalize_setpoint.py`. |
+| `graph_x` | REAL | Saved x position of this node in the web app graph view. `NULL` until the layout is saved. Added by `migrate_add_graph_layout.py`. |
+| `graph_y` | REAL | Saved y position of this node in the web app graph view. `NULL` until the layout is saved. Added by `migrate_add_graph_layout.py`. |
 
 ---
 
