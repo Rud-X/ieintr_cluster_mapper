@@ -22,10 +22,26 @@ import plotly.graph_objects as go
 # --------------------------------------------------------------------------- #
 
 PALETTE = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#17becf",
-    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
-    "#f7b6d2", "#c49c94", "#dbdb8d", "#9edae5", "#ad494a",
+    "#4e79a7",
+    "#f28e2b",
+    "#e15759",
+    "#76b7b2",
+    "#59a14f",
+    "#edc948",
+    "#b07aa1",
+    "#ff9da7",
+    "#9c755f",
+    "#17becf",
+    "#aec7e8",
+    "#ffbb78",
+    "#98df8a",
+    "#ff9896",
+    "#c5b0d5",
+    "#f7b6d2",
+    "#c49c94",
+    "#dbdb8d",
+    "#9edae5",
+    "#ad494a",
 ]
 OTHER_COLOR = "#cccccc"
 UNKNOWN_COLOR = "#aaaaaa"
@@ -34,10 +50,25 @@ UNKNOWN_COLOR = "#aaaaaa"
 _OTHER = "__other__"
 _UNKNOWN = "__unknown__"
 
+# PNG export resolution in DPI. Plotly has no DPI option; it uses a "scale"
+# multiplier on the 96-DPI screen baseline, so we convert. Applies to both the
+# modebar save button and the --output *.png path.
+EXPORT_DPI = 1000
+_PNG_SCALE = EXPORT_DPI / 96
+
+# Base text size for node labels, title and legend (doubled from Plotly's
+# small default). Legend line spacing scales with it to avoid overlap.
+FONT_SIZE = 20
+
+# Base figure size in pixels. The --fig-size multipliers are applied on top.
+BASE_WIDTH = 1000
+BASE_HEIGHT = 700
+
 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -61,33 +92,84 @@ examples:
   python data_exploration/sankey.py --show-products-wastes --output sankey.html
 """,
     )
-    p.add_argument("--db", default="industrial_cluster.db",
-                   help="SQLite database path (default: industrial_cluster.db)")
-    p.add_argument("--companies", nargs="+", metavar="ID",
-                   help="Company IDs to show (default: all with included=1)")
-    p.add_argument("--mode", choices=["component", "stream"], default="component",
-                   help="Color links by component (default) or by stream")
-    p.add_argument("--top-n", type=int, default=5, dest="top_n",
-                   help="Top N components before grouping the rest as 'Other' (component mode, default: 5)")
-    p.add_argument("--include-component", action="append", default=[],
-                   metavar="ID", dest="include_components",
-                   help="Always show this component individually (repeatable; component mode only)")
-    p.add_argument("--exclude-component", action="append", default=[],
-                   metavar="ID", dest="exclude_components",
-                   help="Never show this component individually; fold into 'Other' (repeatable; component mode only)")
-    p.add_argument("--hide-component", action="append", default=[],
-                   metavar="ID", dest="hide_components",
-                   help="Remove this component from the plot entirely; its flow is not shown (repeatable; component mode only)")
-    p.add_argument("--show-products-wastes", action="store_true",
-                   help="Add a 4th node column that splits each company's outputs into Products and Wastes")
-    p.add_argument("--output", metavar="PATH",
-                   help="Save diagram as HTML file instead of opening in browser")
+    p.add_argument(
+        "--db",
+        default="industrial_cluster.db",
+        help="SQLite database path (default: industrial_cluster.db)",
+    )
+    p.add_argument(
+        "--companies",
+        nargs="+",
+        metavar="ID",
+        help="Company IDs to show (default: all with included=1)",
+    )
+    p.add_argument(
+        "--mode",
+        choices=["component", "stream"],
+        default="component",
+        help="Color links by component (default) or by stream",
+    )
+    p.add_argument(
+        "--top-n",
+        type=int,
+        default=5,
+        dest="top_n",
+        help="Top N components before grouping the rest as 'Other' (component mode, default: 5)",
+    )
+    p.add_argument(
+        "--include-component",
+        action="append",
+        default=[],
+        metavar="ID",
+        dest="include_components",
+        help="Always show this component individually (repeatable; component mode only)",
+    )
+    p.add_argument(
+        "--exclude-component",
+        action="append",
+        default=[],
+        metavar="ID",
+        dest="exclude_components",
+        help="Never show this component individually; fold into 'Other' (repeatable; component mode only)",
+    )
+    p.add_argument(
+        "--hide-component",
+        action="append",
+        default=[],
+        metavar="ID",
+        dest="hide_components",
+        help="Remove this component from the plot entirely; its flow is not shown (repeatable; component mode only)",
+    )
+    p.add_argument(
+        "--show-products-wastes",
+        action="store_true",
+        help="Add a 4th node column that splits each company's outputs into Products and Wastes",
+    )
+    p.add_argument(
+        "--output",
+        metavar="PATH",
+        help="Save diagram as HTML file instead of opening in browser",
+    )
+    p.add_argument(
+        "--fig-size",
+        nargs=2,
+        type=float,
+        default=(1.0, 1.0),
+        metavar=("W", "H"),
+        dest="fig_size",
+        help=(
+            f"Relative width and height multipliers applied to the base "
+            f"{BASE_WIDTH}x{BASE_HEIGHT} size (default: 1 1). "
+            f"E.g. '--fig-size 1.5 1' makes it 50%% wider, same height."
+        ),
+    )
     return p.parse_args()
 
 
 # --------------------------------------------------------------------------- #
 # Database helpers
 # --------------------------------------------------------------------------- #
+
 
 def _placeholders(ids):
     return ",".join("?" * len(ids))
@@ -96,10 +178,12 @@ def _placeholders(ids):
 def fetch_company_names(conn, company_ids):
     """Return {company_id: name} for the given ids."""
     ph = _placeholders(company_ids)
-    return dict(conn.execute(
-        f"SELECT company_id, name FROM companies WHERE company_id IN ({ph})",
-        company_ids,
-    ))
+    return dict(
+        conn.execute(
+            f"SELECT company_id, name FROM companies WHERE company_id IN ({ph})",
+            company_ids,
+        )
+    )
 
 
 def load_data(conn, company_ids):
@@ -128,8 +212,12 @@ def load_data(conn, company_ids):
         company_ids,
     ):
         streams[row[0]] = {
-            "stream_id": row[0], "company_id": row[1], "stream_name": row[2],
-            "stream_type": row[3], "direction": row[4], "flow_kton": row[5],
+            "stream_id": row[0],
+            "company_id": row[1],
+            "stream_name": row[2],
+            "stream_type": row[3],
+            "direction": row[4],
+            "flow_kton": row[5],
         }
 
     stream_ids = list(streams.keys())
@@ -149,9 +237,12 @@ def load_data(conn, company_ids):
             stream_ids + stream_ids,
         ):
             flow = {
-                "from_company_id": row[0], "to_company_id": row[1],
-                "from_stream_id": row[2], "to_stream_id": row[3],
-                "flow_kton": row[4], "flow_type": row[5],
+                "from_company_id": row[0],
+                "to_company_id": row[1],
+                "from_stream_id": row[2],
+                "to_stream_id": row[3],
+                "flow_kton": row[4],
+                "flow_type": row[5],
             }
             if row[2]:
                 flows_by_from[row[2]].append(flow)
@@ -177,8 +268,8 @@ def load_data(conn, company_ids):
     # Sender streams may belong to companies outside the selected set.
     # Receiver streams are always in our selected set, but fetching them here
     # keeps the sizing logic self-contained.
-    sender_stream_flows = {}   # {from_stream_id: flow_kton_per_year}
-    receiver_stream_flows = {} # {to_stream_id:   flow_kton_per_year}
+    sender_stream_flows = {}  # {from_stream_id: flow_kton_per_year}
+    receiver_stream_flows = {}  # {to_stream_id:   flow_kton_per_year}
 
     internal_from_ids = [
         f["from_stream_id"]
@@ -223,21 +314,38 @@ def load_data(conn, company_ids):
             """,
             stream_ids,
         ):
-            composition[row[0]].append({
-                "component_id": row[1], "name": row[2], "fraction": row[3],
-            })
+            composition[row[0]].append(
+                {
+                    "component_id": row[1],
+                    "name": row[2],
+                    "fraction": row[3],
+                }
+            )
 
-    return streams, flows_by_from, flows_by_to, sender_stream_flows, receiver_stream_flows, company_node_types, composition
+    return (
+        streams,
+        flows_by_from,
+        flows_by_to,
+        sender_stream_flows,
+        receiver_stream_flows,
+        company_node_types,
+        composition,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Raw link building
 # --------------------------------------------------------------------------- #
 
-def _make_link(src_col, src_label, tgt_col, tgt_label, stream, flow_kton=None, passthrough=False):
+
+def _make_link(
+    src_col, src_label, tgt_col, tgt_label, stream, flow_kton=None, passthrough=False
+):
     return {
-        "src_col": src_col, "src_label": src_label,
-        "tgt_col": tgt_col, "tgt_label": tgt_label,
+        "src_col": src_col,
+        "src_label": src_label,
+        "tgt_col": tgt_col,
+        "tgt_label": tgt_label,
         "stream_id": stream["stream_id"],
         "stream_name": stream["stream_name"],
         "stream_type": stream["stream_type"],
@@ -246,9 +354,18 @@ def _make_link(src_col, src_label, tgt_col, tgt_label, stream, flow_kton=None, p
     }
 
 
-def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by_to,
-                    sender_stream_flows, receiver_stream_flows, company_node_types,
-                    show_products_wastes, conn):
+def build_raw_links(
+    company_ids,
+    company_names,
+    streams,
+    flows_by_from,
+    flows_by_to,
+    sender_stream_flows,
+    receiver_stream_flows,
+    company_node_types,
+    show_products_wastes,
+    conn,
+):
     """
     Produce a flat list of raw links. Each link carries:
       src_col/tgt_col  : 'left' | 'center' | 'center_right' | 'right'
@@ -303,22 +420,31 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                         # Flow is capped at the smaller of the two connected streams
                         flow_size = min(sender_kton, s["flow_kton"])
                         from_name = all_names.get(from_cid, from_cid)
-                        links.append(_make_link("left", from_name, "center", cname, s, flow_size))
+                        links.append(
+                            _make_link("left", from_name, "center", cname, s, flow_size)
+                        )
                         total_covered += flow_size
                     else:
                         # Non-center sender: named node for import_source, else "Import"
                         ntype = company_node_types.get(from_cid, "company")
                         src_label = (
                             all_names.get(from_cid, "Import")
-                            if ntype == "import_source" else "Import"
+                            if ntype == "import_source"
+                            else "Import"
                         )
-                        links.append(_make_link("left", src_label, "center", cname, s, f["flow_kton"]))
+                        links.append(
+                            _make_link(
+                                "left", src_label, "center", cname, s, f["flow_kton"]
+                            )
+                        )
                         total_covered += f["flow_kton"]
 
                 # Remaining input not covered by any sender/import flow → comes from Import
                 remainder = s["flow_kton"] - total_covered
                 if remainder > 1e-6:
-                    links.append(_make_link("left", "Import", "center", cname, s, remainder))
+                    links.append(
+                        _make_link("left", "Import", "center", cname, s, remainder)
+                    )
 
         else:  # output
             flow_list = flows_by_from.get(sid, [])
@@ -337,7 +463,11 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                 if show_products_wastes:
                     sub = _sub_label(cname, s["stream_type"])
                     links.append(_make_link("center", cname, "center_right", sub, s))
-                    links.append(_make_link("center_right", sub, "right", "Export", s, passthrough=True))
+                    links.append(
+                        _make_link(
+                            "center_right", sub, "right", "Export", s, passthrough=True
+                        )
+                    )
                 else:
                     links.append(_make_link("center", cname, "right", "Export", s))
             else:
@@ -345,7 +475,9 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                 for f in flow_list:
                     rlabel = _right_label(f)
                     if f["flow_type"] == "internal":
-                        receiver_kton = receiver_stream_flows.get(f["to_stream_id"], s["flow_kton"])
+                        receiver_kton = receiver_stream_flows.get(
+                            f["to_stream_id"], s["flow_kton"]
+                        )
                         # Flow is capped at the smaller of the two connected streams
                         kton = min(s["flow_kton"], receiver_kton)
                     else:
@@ -353,25 +485,58 @@ def build_raw_links(company_ids, company_names, streams, flows_by_from, flows_by
                     total_sent += kton
                     if show_products_wastes:
                         sub = _sub_label(cname, s["stream_type"])
-                        links.append(_make_link("center", cname, "center_right", sub, s, kton))
-                        links.append(_make_link("center_right", sub, "right", rlabel, s, kton, passthrough=True))
+                        links.append(
+                            _make_link("center", cname, "center_right", sub, s, kton)
+                        )
+                        links.append(
+                            _make_link(
+                                "center_right",
+                                sub,
+                                "right",
+                                rlabel,
+                                s,
+                                kton,
+                                passthrough=True,
+                            )
+                        )
                     else:
-                        links.append(_make_link("center", cname, "right", rlabel, s, kton))
+                        links.append(
+                            _make_link("center", cname, "right", rlabel, s, kton)
+                        )
 
                     # If the receiver is a center company but has no input stream (to_stream_id is
                     # None), it cannot generate its own left-side link — do it here from the sender.
-                    if f["to_stream_id"] is None and f["to_company_id"] in company_names:
-                        links.append(_make_link("left", cname, "center", rlabel, s, kton))
+                    if (
+                        f["to_stream_id"] is None
+                        and f["to_company_id"] in company_names
+                    ):
+                        links.append(
+                            _make_link("left", cname, "center", rlabel, s, kton)
+                        )
 
                 # Any sender output not absorbed by receivers → goes to Export
                 surplus = s["flow_kton"] - total_sent
                 if surplus > 1e-6:
                     if show_products_wastes:
                         sub = _sub_label(cname, s["stream_type"])
-                        links.append(_make_link("center", cname, "center_right", sub, s, surplus))
-                        links.append(_make_link("center_right", sub, "right", "Export", s, surplus, passthrough=True))
+                        links.append(
+                            _make_link("center", cname, "center_right", sub, s, surplus)
+                        )
+                        links.append(
+                            _make_link(
+                                "center_right",
+                                sub,
+                                "right",
+                                "Export",
+                                s,
+                                surplus,
+                                passthrough=True,
+                            )
+                        )
                     else:
-                        links.append(_make_link("center", cname, "right", "Export", s, surplus))
+                        links.append(
+                            _make_link("center", cname, "right", "Export", s, surplus)
+                        )
 
     return links
 
@@ -385,8 +550,15 @@ def _sub_label(company_name, stream_type):
 # Link expansion (component / stream mode)
 # --------------------------------------------------------------------------- #
 
-def expand_by_component(raw_links, composition, top_n, include_component_ids,
-                        exclude_component_ids=(), hide_component_ids=()):
+
+def expand_by_component(
+    raw_links,
+    composition,
+    top_n,
+    include_component_ids,
+    exclude_component_ids=(),
+    hide_component_ids=(),
+):
     """
     Split each raw link into per-component sub-links.
 
@@ -412,8 +584,14 @@ def expand_by_component(raw_links, composition, top_n, include_component_ids,
 
     # Determine top-N set (excluding already force-included, force-excluded, and hidden)
     ranked = sorted(
-        [(cid, tot) for cid, tot in totals.items()
-         if cid not in include_set and cid not in exclude_set and cid not in hide_set and cid != "CM227"],
+        [
+            (cid, tot)
+            for cid, tot in totals.items()
+            if cid not in include_set
+            and cid not in exclude_set
+            and cid not in hide_set
+            and cid != "CM227"
+        ],
         key=lambda x: -x[1],
     )
     top_ids = include_set | {cid for cid, _ in ranked[:top_n]}
@@ -448,19 +626,37 @@ def expand_by_component(raw_links, composition, top_n, include_component_ids,
             elif comp["component_id"] in exclude_set:
                 other_kton += kton
             elif comp["component_id"] in top_ids:
-                expanded.append({
-                    **lnk,
-                    "flow_kton": kton,
-                    "color_key": comp["component_id"],
-                    "color_label": names_map.get(comp["component_id"], comp["component_id"]),
-                })
+                expanded.append(
+                    {
+                        **lnk,
+                        "flow_kton": kton,
+                        "color_key": comp["component_id"],
+                        "color_label": names_map.get(
+                            comp["component_id"], comp["component_id"]
+                        ),
+                    }
+                )
             else:
                 other_kton += kton
 
         if other_kton > 0:
-            expanded.append({**lnk, "flow_kton": other_kton, "color_key": _OTHER, "color_label": "Other"})
+            expanded.append(
+                {
+                    **lnk,
+                    "flow_kton": other_kton,
+                    "color_key": _OTHER,
+                    "color_label": "Other",
+                }
+            )
         if unknown_kton > 0:
-            expanded.append({**lnk, "flow_kton": unknown_kton, "color_key": _UNKNOWN, "color_label": "Unknown"})
+            expanded.append(
+                {
+                    **lnk,
+                    "flow_kton": unknown_kton,
+                    "color_key": _UNKNOWN,
+                    "color_label": "Unknown",
+                }
+            )
 
     return expanded, ordered_keys, key_to_label
 
@@ -489,7 +685,13 @@ def aggregate_links(expanded):
     """
     merged = {}
     for lnk in expanded:
-        key = (lnk["src_col"], lnk["src_label"], lnk["tgt_col"], lnk["tgt_label"], lnk["color_key"])
+        key = (
+            lnk["src_col"],
+            lnk["src_label"],
+            lnk["tgt_col"],
+            lnk["tgt_label"],
+            lnk["color_key"],
+        )
         if key in merged:
             merged[key]["flow_kton"] += lnk["flow_kton"]
         else:
@@ -500,6 +702,7 @@ def aggregate_links(expanded):
 # --------------------------------------------------------------------------- #
 # Color assignment
 # --------------------------------------------------------------------------- #
+
 
 def assign_colors(ordered_keys):
     """Map color_key → hex color string."""
@@ -588,27 +791,53 @@ def build_sankey_data(expanded_links, colors, center_company_names):
             node_labels.append(label)
         node_colors.append(_node_color(col, label, center_company_names))
 
-    return node_labels, node_x, node_y, node_colors, sources, targets, values, link_colors, link_labels
+    return (
+        node_labels,
+        node_x,
+        node_y,
+        node_colors,
+        sources,
+        targets,
+        values,
+        link_colors,
+        link_labels,
+    )
 
 
 def _node_color(col, label, center_names):
     if col == "center":
-        return "rgba(173,216,230,0.8)"   # light blue — company nodes
+        return "rgba(173,216,230,0.8)"  # light blue — company nodes
     if col == "center_right":
         if label.endswith("| Products"):
             return "rgba(148,103,189,0.8)"  # purple — product sub-nodes
-        return "rgba(100,100,100,0.8)"       # dark grey — waste sub-nodes
+        return "rgba(100,100,100,0.8)"  # dark grey — waste sub-nodes
     if col in ("left", "right") and label in center_names:
-        return "rgba(173,216,230,0.8)"   # light blue — regular company sidebar nodes only
-    return "rgba(120,120,120,0.3)"           # default grey — Import/Export/IMP/EXP/WMF nodes
+        return (
+            "rgba(173,216,230,0.8)"  # light blue — regular company sidebar nodes only
+        )
+    return "rgba(120,120,120,0.3)"  # default grey — Import/Export/IMP/EXP/WMF nodes
 
 
 # --------------------------------------------------------------------------- #
 # Rendering
 # --------------------------------------------------------------------------- #
 
-def render(node_labels, node_x, node_y, node_colors, sources, targets, values,
-           link_colors, link_labels, key_to_label, colors, output=None):
+
+def render(
+    node_labels,
+    node_x,
+    node_y,
+    node_colors,
+    sources,
+    targets,
+    values,
+    link_colors,
+    link_labels,
+    key_to_label,
+    colors,
+    output=None,
+    fig_size=(1.0, 1.0),
+):
     """Create and display (or save) the Sankey figure."""
 
     # Node hover text: total throughput
@@ -621,28 +850,32 @@ def render(node_labels, node_x, node_y, node_colors, sources, targets, values,
         for i, label in enumerate(node_labels)
     ]
 
-    fig = go.Figure(data=[go.Sankey(
-        arrangement="snap",
-        node=dict(
-            pad=20,
-            thickness=25,
-            line=dict(color="black", width=0.5),
-            label=node_labels,
-            customdata=node_hover,
-            hovertemplate="%{customdata}<extra></extra>",
-            x=node_x,
-            y=node_y,
-            color=node_colors,
-        ),
-        link=dict(
-            source=sources,
-            target=targets,
-            value=values,
-            color=link_colors,
-            label=link_labels,
-            hovertemplate="%{label}<extra></extra>",
-        ),
-    )])
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node=dict(
+                    pad=20,
+                    thickness=25,
+                    line=dict(color="black", width=0.5),
+                    label=node_labels,
+                    customdata=node_hover,
+                    hovertemplate="%{customdata}<extra></extra>",
+                    x=node_x,
+                    y=node_y,
+                    color=node_colors,
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color=link_colors,
+                    label=link_labels,
+                    hovertemplate="%{label}<extra></extra>",
+                ),
+            )
+        ]
+    )
 
     # Legend via annotations
     legend_lines = ["<b>Legend</b>"]
@@ -653,42 +886,62 @@ def render(node_labels, node_x, node_y, node_colors, sources, targets, values,
             seen_keys.append((key, label))
             seen_set.add(key)
 
+    legend_dy = FONT_SIZE / 500  # vertical spacing per legend line, scales with font
     annotations = []
     for i, (key, label) in enumerate(seen_keys):
         color = colors.get(key, OTHER_COLOR)
-        annotations.append(dict(
-            x=1.01, y=1.0 - i * 0.045,
-            xref="paper", yref="paper",
-            xanchor="left", yanchor="top",
-            text=f"<span style='color:{color}'>■</span> {label}",
-            showarrow=False,
-            font=dict(size=11),
-        ))
+        annotations.append(
+            dict(
+                x=1.01,
+                y=1.0 - i * legend_dy,
+                xref="paper",
+                yref="paper",
+                xanchor="left",
+                yanchor="top",
+                text=f"<span style='color:{color}'>■</span> {label}",
+                showarrow=False,
+                font=dict(size=FONT_SIZE - 2),
+            )
+        )
 
+    w_mult, h_mult = fig_size
     fig.update_layout(
         title_text="Industrial Cluster — Material Flow Sankey",
-        font_size=12,
-        height=700,
-        width=1000,
+        font_size=FONT_SIZE,
+        height=BASE_HEIGHT * h_mult,
+        width=BASE_WIDTH * w_mult,
         margin=dict(r=220),
         annotations=annotations,
     )
 
     if output:
         import pathlib
+
         pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)
         if output.endswith(".png"):
-            fig.write_image(output, scale=8)
+            fig.write_image(output, scale=_PNG_SCALE)
         else:
-            fig.write_html(output)
+            fig.write_html(
+                output,
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "filename": pathlib.Path(output).stem,
+                        "scale": _PNG_SCALE,
+                    }
+                },
+            )
         print(f"Saved to {output}")
     else:
-        fig.show()
+        fig.show(
+            config={"toImageButtonOptions": {"format": "png", "scale": _PNG_SCALE}}
+        )
 
 
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+
 
 def main():
     args = parse_args()
@@ -700,7 +953,8 @@ def main():
         company_ids = args.companies
     else:
         company_ids = [
-            row[0] for row in conn.execute(
+            row[0]
+            for row in conn.execute(
                 "SELECT company_id FROM companies WHERE included=1 AND node_type='company' ORDER BY company_id"
             )
         ]
@@ -720,7 +974,8 @@ def main():
     if company_ids:
         ph = _placeholders(company_ids)
         wmf_center = [
-            row[0] for row in conn.execute(
+            row[0]
+            for row in conn.execute(
                 f"""
                 SELECT DISTINCT c.company_id
                 FROM flows f
@@ -747,21 +1002,40 @@ def main():
 
     print(f"Companies: {', '.join(company_names[cid] for cid in company_ids)}")
 
-    streams, flows_by_from, flows_by_to, sender_stream_flows, receiver_stream_flows, \
-        company_node_types, composition = load_data(conn, company_ids)
-    print(f"Streams loaded: {len(streams)}  |  Flows loaded: {sum(len(v) for v in flows_by_from.values())}")
+    (
+        streams,
+        flows_by_from,
+        flows_by_to,
+        sender_stream_flows,
+        receiver_stream_flows,
+        company_node_types,
+        composition,
+    ) = load_data(conn, company_ids)
+    print(
+        f"Streams loaded: {len(streams)}  |  Flows loaded: {sum(len(v) for v in flows_by_from.values())}"
+    )
 
     raw_links = build_raw_links(
-        company_ids, company_names, streams,
-        flows_by_from, flows_by_to,
-        sender_stream_flows, receiver_stream_flows, company_node_types,
-        args.show_products_wastes, conn,
+        company_ids,
+        company_names,
+        streams,
+        flows_by_from,
+        flows_by_to,
+        sender_stream_flows,
+        receiver_stream_flows,
+        company_node_types,
+        args.show_products_wastes,
+        conn,
     )
 
     if args.mode == "component":
         expanded, ordered_keys, key_to_label = expand_by_component(
-            raw_links, composition, args.top_n, args.include_components,
-            args.exclude_components, args.hide_components,
+            raw_links,
+            composition,
+            args.top_n,
+            args.include_components,
+            args.exclude_components,
+            args.hide_components,
         )
         expanded = aggregate_links(expanded)
     else:
@@ -769,8 +1043,17 @@ def main():
 
     colors = assign_colors(ordered_keys)
 
-    node_labels, node_x, node_y, node_colors, sources, targets, values, link_colors, link_labels = \
-        build_sankey_data(expanded, colors, center_company_names)
+    (
+        node_labels,
+        node_x,
+        node_y,
+        node_colors,
+        sources,
+        targets,
+        values,
+        link_colors,
+        link_labels,
+    ) = build_sankey_data(expanded, colors, center_company_names)
 
     if not sources:
         print("No links to display.")
@@ -778,10 +1061,19 @@ def main():
         return
 
     render(
-        node_labels, node_x, node_y, node_colors,
-        sources, targets, values, link_colors, link_labels,
-        key_to_label, colors,
+        node_labels,
+        node_x,
+        node_y,
+        node_colors,
+        sources,
+        targets,
+        values,
+        link_colors,
+        link_labels,
+        key_to_label,
+        colors,
         args.output,
+        args.fig_size,
     )
 
     conn.close()
