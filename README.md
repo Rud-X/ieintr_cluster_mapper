@@ -28,7 +28,9 @@ Here a brief overview of the different folders and what they include
 In the root are the files:
 - dev.sh => Starts the server for the web-app (see below)
 - industrial_cluster.db => The default database file
-- 
+- LICENSE => License file
+- README => This file
+- server.py => The backend server for the web-app
 
 # Prerequisites
 
@@ -93,12 +95,16 @@ Navigate with the arrow keys, `Enter` to select, and `Ctrl+C` to go back / quit.
 
 ## Chapter 4
 
+### Sankey
+
+TBD
+
 ### Mass and carbon balance
 
 To recalculate the mass and carbon balances after adjusting the scaling factors accordingly. Run the `script_mass_balance.py`:
 
 ```bash
-python ./data_exploration/script_mass_balance.py all_included
+python ./data_explorationch4//script_mass_balance.py all_included
 ```
 
 The `all_included` parameter ensures that it is only calculated for the companies that are chosen to be included in the analysis (can be changed either through the web-interface or the CLI)
@@ -107,6 +113,9 @@ The `all_included` parameter ensures that it is only calculated for the companie
 
 **Other databases:** If you want to use another database version, add the path via the argument: `--db /path/to/db.sqlite`
 
+### Script stream
+
+### Flow compatibility
 
 # AI statement
 
