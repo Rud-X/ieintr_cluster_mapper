@@ -1,6 +1,8 @@
 # Industrial Cluster Material Flow Analysis
 This repository includes data and data analysis tools for the course Integrated Project at the Industrial Ecology Master of Science program at Leiden University and TU Delft.
 
+**Dataset license**: The dataset in /data was provided by Korevaar, G., & Ibarra Gonzalez for the purposes of the mentioned course and is used with permission. It is not covered by this repository's GPLv3 license. Contact Korevaar, G., & Ibarra Gonzalez for reuse permissions.
+
 ## Developer
 The primary developer on this repository is: 
 >C. Rud Hansen ([GitHub](https://github.com/Rud-X))
@@ -11,6 +13,10 @@ The primary data source for the analysis is the provided material in the course:
 >Korevaar, G., & Ibarra Gonzalez, P. (2026). Industrial Park Data 2026 [Dataset].
 
 # Tools needed
+
+TBD
+
+# Repository structure
 
 TBD
 
