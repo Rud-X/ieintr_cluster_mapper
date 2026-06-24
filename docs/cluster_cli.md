@@ -1,6 +1,6 @@
 # cluster_cli.py — Interactive TUI Menu
 
-`analysis/cluster_cli.py` is the single interactive entry point for all analysis and data-management tools. It wraps `manage_companies.py`, `manage_flows_tui.py`, `carbon.py`, and `normalize_streams.py` behind arrow-key menus.
+`analysis/cluster_cli.py` is the single interactive entry point for all analysis and data-management tools. It wraps `manage_companies_tui.py`, `manage_flows_tui.py`, `carbon_tui.py`, `carbon.py`, `explore.py`, and `normalize_streams.py` behind arrow-key menus.
 
 ## Usage
 
@@ -24,20 +24,22 @@ Industrial Cluster Analysis
 │   ├── + Add Company                (prompts: name)
 │   ├── + Add External Node          (prompts: node type, name)
 │   │     node types: import_source [IMP], export_sink [EXP], waste_facility [WMF]
+│   ├── Quick Toggle Included         (flip included on any company without entering its menu)
 │   └── [select a company or external node]
 │       ├── Explore
 │       │   ├── (metadata header: stream counts, flows, normalization, included)
 │       │   ├── (stream table — select a stream)
 │       │   └──   └── (composition detail → "← Back to streams")
 │       ├── Normalization            (companies only — hidden for external nodes)
-│       │   ├── (header: current reference stream + flow)
+│       │   ├── (header: current reference stream / custom factor + flow)
 │       │   ├── Select normalization stream   (toggles reference; auto-recalculates)
 │       │   └── Recalculate normalization
 │       ├── Create Flow
 │       │   ├── (header: flow counts, unconnected streams)
 │       │   └── (stream picker → company picker OR "→ Connect to external node" → confirm)
+│       ├── Manage Flows              (filtered to this company — see Manage Flows below)
 │       ├── Toggle Included           (flips included ↔ excluded; prints confirmation)
-│       └── Manage Flows              (filtered to this company — see Manage Flows below)
+│       └── Delete...                 (confirm by typing "delete company" → removes node + its streams/flows)
 ├── Manage Flows
 │   ├── (flow table: ID, From Co/Stream → To Co/Stream, status)
 │   └── [select a flow]
@@ -45,18 +47,13 @@ Industrial Cluster Analysis
 │       ├── Change outflow stream     (pick new source; fixed = inflow side)
 │       ├── Change inflow stream      (pick new destination; fixed = outflow side)
 │       └── Delete flow               (confirm → remove from DB)
+├── Manage Streams                    (→ carbon_tui.manage_streams: browse all streams, drill to composition, connect to flows)
+├── Manage Components                 (→ carbon_tui.manage_components: browse/edit components, merge duplicates)
 ├── Carbon Accounting
 │   ├── Status overview
 │   ├── Recalculate all
-│   ├── List gaps
-│   ├── Show component          (prompts: Component ID)
-│   ├── Set component data      (prompts: Component ID, carbon atoms*, MW*, carbon pct*)
-│   └── Clear manual override   (prompts: Component ID)
-├── Stream Normalization
-│   ├── Normalize all
-│   ├── List candidates         (prompts: Company ID)
-│   ├── Set reference stream    (prompts: Company ID, Stream ID)
-│   └── Clear reference stream  (prompts: Company ID)
+│   ├── Browse Components        (interactive list; filter to gaps, edit MW/carbon atoms/override, merge)
+│   └── Browse Streams           (interactive list; filter to incomplete, drill to composition)
 └── Explore
     ├── Database summary
     ├── List companies
@@ -64,7 +61,7 @@ Industrial Cluster Analysis
     └── Drill-down explorer
 ```
 
-`*` = optional; leave blank to skip that field.
+There is no standalone "Stream Normalization" module: normalization is managed per-company under **Manage Companies → Normalization**, or in bulk via `normalize_streams.py normalize` (see `analysis_tools.md`).
 
 ---
 
@@ -100,10 +97,13 @@ Select `+ Add External Node` to insert an import source, export sink, or waste f
 | Option | Description |
 |---|---|
 | Explore | Stream table with metadata header; select a stream to view composition |
-| Normalization | Set/clear reference stream — **companies only** (hidden for external nodes) |
+| Normalization | Set/clear reference stream or custom factor — **companies only** (hidden for external nodes) |
 | Create Flow | Pick a stream → pick a company **or external node** → confirm |
-| Toggle Included | Flips `companies.included` 0↔1; prints confirmation |
 | Manage Flows | Opens Manage Flows filtered to this company |
+| Toggle Included | Flips `companies.included` 0↔1; prints confirmation |
+| Delete... | Confirm by typing `"delete company"` → removes the node and its streams/flows |
+
+The company-list screen also offers **Quick Toggle Included** to flip `included` on any company without first opening its sub-menu.
 
 ### Create Flow — external node connections
 
@@ -176,7 +176,8 @@ The same view is available from within a company's sub-menu, pre-filtered to flo
 | `analysis/manage_companies.py` | Pure DB logic: company/stream/flow queries and mutations |
 | `analysis/manage_companies_tui.py` | TUI for Manage Companies + shared `pick_stream_for_flow()` helper |
 | `analysis/manage_flows_tui.py` | TUI for Manage Flows |
-| `analysis/explore.py` | Read-only DB exploration (used by Explore module in legacy menus) |
+| `analysis/carbon_tui.py` | TUI for Carbon Accounting (Browse Components/Streams) and for the top-level Manage Streams / Manage Components menus; component merge + composition editing |
+| `analysis/explore.py` | Read-only DB exploration (backs the Explore module) |
 | `analysis/carbon.py` | Carbon accounting backend + CLI |
 | `analysis/normalize_streams.py` | Stream normalization backend + CLI |
 
@@ -199,7 +200,7 @@ Each param spec has:
 
 All callables receive `db_path` as a keyword argument.
 
-`Manage Companies` and `Manage Flows` are handled outside the MODULES registry (custom `if` branches in `main()`) because they require context-aware multi-level navigation that cannot be expressed as a flat action list.
+Only `Carbon Accounting` and `Explore` are driven by the MODULES registry. `Manage Companies`, `Manage Flows`, `Manage Streams`, and `Manage Components` are handled outside it (custom `if` branches in `main()`) because they require context-aware multi-level navigation that cannot be expressed as a flat action list.
 
 ### Key functions in `cluster_cli.py`
 

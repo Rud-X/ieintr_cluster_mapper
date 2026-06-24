@@ -100,7 +100,29 @@ Handles all formats observed in real data:
 
 ## Migration scripts
 
-Each migration adds columns to an existing database. Run them in order on a fresh `extract.py` output, or whenever the schema needs to be updated.
+Each migration adds columns to (or evolves) an existing database. `migrations/run_migration.py` runs the full pipeline in order on a fresh `extract.py` output:
+
+| Step | Script | Entry point |
+|---|---|---|
+| 1 | `extract.py` | `main()` |
+| 2 | `migrate_add_company_columns.py` | `migrate()` |
+| 3 | `migrate_add_normalization.py` | `migrate()` |
+| 4 | `migrate_add_carbon.py` | `migrate()` |
+| 5 | `migrate_add_normalize_setpoint.py` | `migrate()` |
+| 6 | `migrate_add_external_nodes.py` | `migrate()` |
+| 7 | `seed_manual_companies.py` | `apply()` |
+| 8 | `correct_components.py` | `apply()` |
+
+```bash
+python migrations/run_migration.py            # run all 8 steps
+python migrations/run_migration.py --dry-run  # steps 1–7 normally, preview step 8
+```
+
+> **Not in the pipeline.** Two further schema migrations exist but are **not** invoked by `run_migration.py`; run them standalone after a rebuild if the web app graph view or manual scaling factors are needed:
+> - `migrate_add_graph_layout.py` — adds `companies.graph_x`, `companies.graph_y` (entry point `run()`).
+> - `migrate_add_scaling_factor_manual.py` — adds `companies.scaling_factor_manual` (entry point `migrate()`).
+
+All steps are idempotent (safe to re-run on an existing schema).
 
 ### `migrations/migrate_add_company_columns.py`
 
@@ -135,6 +157,26 @@ Adds carbon tracking columns across three tables.
 | `streams` | `carbon_pct_complete` | `NULL` |
 
 Values are computed afterward by `analysis/carbon.py recalculate`.
+
+### `migrations/migrate_add_normalize_setpoint.py`
+
+Adds one column to support a normalization target value.
+
+| Table | Column | Default |
+|---|---|---|
+| `companies` | `normalize_setpoint` | `1.0` |
+
+With a reference stream set, `normalize_streams.py` scales the reference stream to `normalize_setpoint` (so `norm_flow = flow / ref_flow × setpoint`).
+
+### `migrations/migrate_add_external_nodes.py`
+
+Adds external-node support (import sources, export sinks, waste facilities):
+
+1. `companies` — adds `node_type` (TEXT NOT NULL DEFAULT `'company'`; values `company`, `import_source`, `export_sink`, `waste_facility`).
+2. `flows` — adds `flow_type` (TEXT NOT NULL DEFAULT `'internal'`; values `internal`, `import`, `export`, `waste_to_wmf`).
+3. `flows` — **recreates the table** to drop the NOT NULL constraint on `from_stream_id` and `to_stream_id`, so import flows (no from-stream) and export/WMF flows (no to-stream) are representable. Existing rows are copied across. Idempotent: skips recreation if the FKs are already nullable.
+
+See `data_model.md` → **External Nodes** for the resulting flow-type semantics.
 
 ### `migrations/correct_components.py`
 

@@ -144,7 +144,7 @@ One row per stream per company. `direction` is derived from `stream_type` and ma
 | `stream_type` | TEXT | `raw_material`, `product`, or `waste` |
 | `direction` | TEXT | Derived: `input` (raw_material) or `output` (product, waste) |
 | `flow_kton_per_year` | REAL | Flow rate in kton/year |
-| `norm_flow_kton_per_year` | REAL | `flow_kton_per_year / ref_flow` where `ref_flow` is the company's reference stream. Reference stream's own value is always `1.0`. NULL when no reference set. Added by `migrate_add_normalization.py`. |
+| `norm_flow_kton_per_year` | REAL | `flow_kton_per_year × scaling_factor`. With a reference stream set this equals `flow / ref_flow × setpoint` (the reference stream itself becomes `setpoint`); with `scaling_factor_manual = 1` it uses the stored `scaling_factor`; with no reference it equals the raw flow. Populated for all companies by `normalize_streams.py`. Added by `migrate_add_normalization.py`. |
 | `temperature_c` | REAL | Operating temperature in °C (NULL if not provided) |
 | `pressure_bar` | REAL | Operating pressure in bar (NULL if not provided) |
 | `composition_raw` | TEXT | Original composition string, preserved for reference |

@@ -1,55 +1,62 @@
 # Analysis Tools
 
-Two CLI tools for post-extraction analysis: stream normalization and carbon accounting.
+Two scriptable CLI tools for post-extraction analysis: stream normalization and carbon accounting.
 
 Both live in `analysis/` and accept an optional `--db <path>` argument (default: `industrial_cluster.db`).
+
+> For the interactive arrow-key menus that wrap these (plus company/flow/stream/component management), see `cluster_cli.md`. For the browser-based interface, see `webapp.md`.
 
 ---
 
 ## Stream Normalization (`normalize_streams.py`)
 
-Per-company normalization of flow rates relative to a single reference stream. When a reference is set, all `norm_flow_kton_per_year` values for that company are computed as `flow_kton_per_year / ref_flow`, making the reference stream's value `1.0` and scaling all others proportionally.
+Per-company scaling of flow rates. `normalize` writes `norm_flow_kton_per_year` for **every** company stream and writes the company's `scaling_factor` (it never modifies raw `flow_kton_per_year`). Each company resolves to one of three modes:
 
-This is **independent** of `scaling_factor` (which is display-only and never written to the DB). Normalization writes to the DB; it never modifies raw `flow_kton_per_year`.
+| Mode | Condition | `norm_flow` | `scaling_factor` written |
+|---|---|---|---|
+| **Manual factor** | `scaling_factor_manual = 1` | `flow × scaling_factor` | (left as the stored value) |
+| **Reference stream** | `normalize_stream_id` set | `flow / ref_flow × setpoint` | `setpoint / ref_flow` |
+| **None** | neither set | `flow` (unchanged) | `1.0` |
+
+The reference stream is scaled to `normalize_setpoint` (default 1.0); all other streams of that company scale proportionally.
 
 ### Schema affected
 
-- `companies.normalize_stream_id` — FK to the reference stream (`output` direction, same company, `flow > 0`). `NULL` = disabled.
-- `streams.norm_flow_kton_per_year` — computed normalized value. `NULL` when no reference is set.
+- `companies.normalize_stream_id` — FK to the reference stream (same company, `flow > 0`). `NULL` = no reference.
+- `companies.normalize_setpoint` — target value the reference stream is scaled to (default 1.0).
+- `companies.scaling_factor` — multiplier written by `normalize` (or set manually). Used as `norm_flow = flow × scaling_factor`.
+- `companies.scaling_factor_manual` — `1` = use the stored `scaling_factor` directly instead of recomputing it.
+- `streams.norm_flow_kton_per_year` — computed normalized value (written for all streams).
 
-Both columns added by `migrations/migrate_add_normalization.py`.
+Columns added by `migrate_add_normalization.py`, `migrate_add_normalize_setpoint.py`, and `migrate_add_scaling_factor_manual.py`.
 
 ### CLI
 
 ```bash
-# List valid output streams for a company (current reference marked with *)
+# List candidate reference streams for a company (any direction, flow > 0; current marked with *)
 python analysis/normalize_streams.py list <company_id>
 
-# Set the reference stream for a company
+# Set / clear the reference stream for a company
 python analysis/normalize_streams.py set <company_id> <stream_id>
-
-# Clear the reference stream for a company
 python analysis/normalize_streams.py clear <company_id>
 
-# Recalculate norm_flow_kton_per_year for all companies that have a reference set
+# Set / clear a manual scaling factor (bypasses the reference-stream formula;
+# set also clears normalize_stream_id and immediately recalculates)
+python analysis/normalize_streams.py set-custom-factor <company_id> <value>
+python analysis/normalize_streams.py clear-custom-factor <company_id>
+
+# Recalculate norm_flow_kton_per_year + scaling_factor for all companies
 python analysis/normalize_streams.py normalize
 ```
 
-`set` validates:
-- `company_id` exists in `companies`
-- `stream_id` exists in `streams`
-- Stream belongs to the specified company
-- Stream `direction = 'output'`
-- Stream `flow_kton_per_year > 0`
-
-`normalize` applies the same validation at run time and skips (with a warning) any company that fails.
+`set` validates that `company_id` and `stream_id` exist, the stream belongs to the company, and `flow_kton_per_year > 0`. (Direction is **not** restricted — a reference stream may be an input or an output.) `set-custom-factor` requires `value > 0`. `normalize` re-applies validation at run time and skips (with a warning) any company that fails.
 
 ### Typical workflow
 
 ```bash
-python analysis/normalize_streams.py list C001       # find a valid reference stream
+python analysis/normalize_streams.py list C001       # find a candidate reference stream
 python analysis/normalize_streams.py set C001 S007   # set it
-python analysis/normalize_streams.py normalize       # compute norm_flow_kton_per_year
+python analysis/normalize_streams.py normalize       # compute norm_flow + scaling_factor
 ```
 
 ---
