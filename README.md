@@ -1,28 +1,21 @@
-# Industrial Cluster Material Flow Analysis — Project Spec
+# Industrial Cluster Material Flow Analysis
 
-> Living document. Update as the project evolves. Intended to be passed to Claude Code for implementation.
 
----
+# Chapter specific info
 
-## Project Goal
+## Chapter 4
 
-Extract material flow data from a poorly structured Excel file and organize it into a clean, queryable database. The primary use case is **graph analysis to identify which companies could be connected** based on matching inflows and outflows — i.e. industrial symbiosis matching.
+### Mass and carbon balance
 
-Companies are **not yet connected** in the real world. The `streams` table captures what each company consumes and produces independently. The `flows` table starts empty and is only populated after matching analysis identifies candidate connections.
+To recalculate the mass and carbon balances after adjusting the scaling factors accordingly. Run the `script_mass_balance.py`:
 
----
+```bash
+python ./data_exploration/script_mass_balance.py all_included
+```
 
-## Documentation
+The `all_included` parameter ensures that it is only calculated for the companies that are chosen to be included in the analysis (can be changed either through the web-interface or the CLI)
 
-| Document | Contents |
-|---|---|
-| [docs/data_model.md](docs/data_model.md) | Tables, columns, ER diagram, key design decisions |
-| [docs/migrations_and_extraction.md](docs/migrations_and_extraction.md) | Source CSV formats, `extract.py` pipeline, composition string parser, migration scripts |
-| [docs/analysis_tools.md](docs/analysis_tools.md) | `normalize_streams.py` and `carbon.py` CLI reference |
-| [docs/folder_structure.md](docs/folder_structure.md) | Annotated directory tree and file roles |
+**Export to CSV:** For exporting to .csv, add the argument `output=csv` to the call
 
----
-
-## TODO / Next Steps
-
+**Other databases:** If you want to use another database version, add the path via the argument: `--db /path/to/db.sqlite`
 
