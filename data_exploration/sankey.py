@@ -669,12 +669,18 @@ def render(node_labels, node_x, node_y, node_colors, sources, targets, values,
         title_text="Industrial Cluster — Material Flow Sankey",
         font_size=12,
         height=700,
+        width=1000,
         margin=dict(r=220),
         annotations=annotations,
     )
 
     if output:
-        fig.write_html(output)
+        import pathlib
+        pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)
+        if output.endswith(".png"):
+            fig.write_image(output, scale=8)
+        else:
+            fig.write_html(output)
         print(f"Saved to {output}")
     else:
         fig.show()
